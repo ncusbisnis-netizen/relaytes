@@ -8,14 +8,10 @@ import re
 import logging
 import json
 import requests
-import pytesseract
+import base64
 from PIL import Image, ImageEnhance
 import cv2
 import numpy as np
-
-# Set path Tesseract untuk Heroku
-pytesseract.pytesseract.tesseract_cmd = '/app/.apt/usr/bin/tesseract'
-os.environ['TESSDATA_PREFIX'] = '/app/.apt/usr/share/tesseract-ocr/5/tessdata/'
 
 # Setup logging
 logging.basicConfig(
@@ -31,11 +27,15 @@ SESSION_STRING = os.environ.get('SESSION_STRING', '')
 BOT_B_TOKEN = os.environ.get('BOT_B_TOKEN', '')
 BOT_A_CHAT_ID = int(os.environ.get('BOT_A_CHAT_ID', 0))
 REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
+OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', '')  # API Key OCR.space
 
 # Validasi environment
 if not all([API_ID, API_HASH, SESSION_STRING, BOT_B_TOKEN, BOT_A_CHAT_ID, REDIS_URL]):
     logger.error("❌ Missing required environment variables!")
     exit(1)
+
+if not OCR_SPACE_API_KEY:
+    logger.warning("⚠️ OCR_SPACE_API_KEY tidak ditemukan! OCR online tidak akan berfungsi.")
 
 # Redis connection
 try:
@@ -52,100 +52,81 @@ client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 bot_status = {'in_captcha': False}
 sent_requests = {}
 
-# ==================== OCR FUNCTION (IMPROVED) ====================
+# ==================== OCR ONLINE FUNCTION ====================
 
-async def read_number_from_photo(message):
-    """Baca angka 6 digit dari foto captcha dengan preprocessing optimal"""
-    photo_path = None
-    temp_path = None
-    
+async def read_number_from_photo_online(message):
+    """Baca angka 6 digit dari foto captcha menggunakan OCR.space API"""
     try:
-        logger.info("📸 OCR: Downloading captcha photo...")
+        if not OCR_SPACE_API_KEY:
+            logger.error("❌ OCR_SPACE_API_KEY tidak tersedia")
+            return None
+        
+        logger.info("📸 OCR Online: Downloading captcha photo...")
+        
+        # Download foto
         photo_path = await message.download_media()
         logger.info(f"✅ Photo downloaded: {photo_path}")
         
-        # ===== PREPROCESSING 1: PIL Basic =====
-        img = Image.open(photo_path)
+        # Baca file sebagai base64
+        with open(photo_path, 'rb') as f:
+            image_data = base64.b64encode(f.read()).decode('utf-8')
         
-        # Convert ke grayscale
-        img = img.convert('L')
+        # Hapus file setelah dibaca
+        os.remove(photo_path)
         
-        # Tingkatkan kontras (agresif)
-        enhancer = ImageEnhance.Contrast(img)
-        img = enhancer.enhance(3.0)
+        # OCR.space API endpoint
+        url = 'https://api.ocr.space/parse/image'
         
-        # Threshold sederhana
-        img = img.point(lambda p: p > 180 and 255)
+        # Payload untuk API
+        payload = {
+            'base64Image': f'data:image/jpeg;base64,{image_data}',
+            'apikey': OCR_SPACE_API_KEY,
+            'language': 'eng',
+            'OCREngine': '2',  # Engine 2 lebih akurat untuk captcha
+            'isTable': 'false',
+            'scale': 'true',  # Upscale untuk gambar kecil
+            'detectOrientation': 'true'
+        }
         
-        temp_path = f"/tmp/ocr_pil_{int(time.time())}.png"
-        img.save(temp_path)
+        logger.info("📤 Sending to OCR.space API...")
         
-        # OCR attempt 1
-        custom_config = r'--oem 3 --psm 8 -c tessedit_char_whitelist=0123456789'
-        text = pytesseract.image_to_string(temp_path, config=custom_config)
-        text = re.sub(r'[^0-9]', '', text)
+        # Kirim request
+        response = requests.post(url, data=payload, timeout=30)
         
-        if re.search(r'\d{6}', text):
-            code = re.search(r'\d{6}', text).group()
-            logger.info(f"✅ OCR success (PIL): {code}")
-            return code
-        
-        # ===== PREPROCESSING 2: OpenCV Advanced =====
-        logger.info("🔄 Trying OpenCV preprocessing...")
-        
-        img_cv = cv2.imread(photo_path)
-        gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
-        
-        # Adaptive threshold
-        thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                                       cv2.THRESH_BINARY_INV, 11, 2)
-        
-        # Dilasi untuk mempertebal angka
-        kernel = np.ones((2, 2), np.uint8)
-        dilated = cv2.dilate(thresh, kernel, iterations=1)
-        
-        # Resize 2x
-        resized = cv2.resize(dilated, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-        
-        temp_path2 = f"/tmp/ocr_cv_{int(time.time())}.png"
-        cv2.imwrite(temp_path2, resized)
-        
-        # OCR attempt 2
-        text2 = pytesseract.image_to_string(temp_path2, config=custom_config)
-        text2 = re.sub(r'[^0-9]', '', text2)
-        
-        if re.search(r'\d{6}', text2):
-            code = re.search(r'\d{6}', text2).group()
-            logger.info(f"✅ OCR success (OpenCV): {code}")
-            return code
-        
-        # ===== PREPROCESSING 3: Inverted colors =====
-        inverted = cv2.bitwise_not(resized)
-        temp_path3 = f"/tmp/ocr_inv_{int(time.time())}.png"
-        cv2.imwrite(temp_path3, inverted)
-        
-        text3 = pytesseract.image_to_string(temp_path3, config=custom_config)
-        text3 = re.sub(r'[^0-9]', '', text3)
-        
-        if re.search(r'\d{6}', text3):
-            code = re.search(r'\d{6}', text3).group()
-            logger.info(f"✅ OCR success (Inverted): {code}")
-            return code
-        
-        logger.warning("❌ All OCR attempts failed")
+        if response.status_code == 200:
+            result = response.json()
+            
+            # Log response (opsional, bisa di-comment kalau terlalu banyak)
+            # logger.info(f"OCR Response: {result}")
+            
+            # Cek apakah OCR berhasil
+            if result.get('IsErroredOnProcessing') == False:
+                if result.get('ParsedResults') and len(result['ParsedResults']) > 0:
+                    text = result['ParsedResults'][0].get('ParsedText', '')
+                    
+                    # Bersihkan hasil (ambil hanya angka)
+                    text = re.sub(r'[^0-9]', '', text)
+                    logger.info(f"📝 OCR result: '{text}'")
+                    
+                    # Cari 6 digit
+                    match = re.search(r'(\d{6})', text)
+                    if match:
+                        code = match.group(1)
+                        logger.info(f"✅ OCR Online success: {code}")
+                        return code
+                    else:
+                        logger.warning("❌ No 6-digit found in OCR result")
+            else:
+                error = result.get('ErrorMessage', ['Unknown error'])[0]
+                logger.error(f"❌ OCR Error: {error}")
+        else:
+            logger.error(f"❌ API Error: {response.status_code}")
+            
         return None
         
     except Exception as e:
-        logger.error(f"❌ OCR error: {e}")
+        logger.error(f"❌ OCR Online error: {e}")
         return None
-    finally:
-        # Bersihkan semua file temporary
-        for path in [photo_path, temp_path, temp_path2, temp_path3]:
-            if path and os.path.exists(path):
-                try:
-                    os.remove(path)
-                except:
-                    pass
 
 # ==================== RETRY PENDING REQUESTS ====================
 
@@ -248,10 +229,10 @@ async def message_handler(event):
     if is_captcha:
         logger.warning("🚫 CAPTCHA DETECTED!")
         
-        # Jika captcha_code belum ada (foto tanpa teks), pakai OCR
+        # Jika captcha_code belum ada (foto tanpa teks), pakai OCR ONLINE
         if not captcha_code and message.photo:
-            logger.info("🔍 No text code found, trying OCR...")
-            captcha_code = await read_number_from_photo(message)
+            logger.info("🔍 No text code found, trying OCR online...")
+            captcha_code = await read_number_from_photo_online(message)
         
         if captcha_code and len(captcha_code) == 6:
             logger.info(f"✅✅✅ CAPTCHA CODE: {captcha_code}")
