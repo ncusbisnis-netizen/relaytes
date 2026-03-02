@@ -9,7 +9,8 @@ import logging
 import json
 import requests
 import base64
-from PIL import Image, ImageEnhance
+import aiohttp
+from PIL import Image
 
 # Setup logging
 logging.basicConfig(
@@ -25,15 +26,261 @@ SESSION_STRING = os.environ.get('SESSION_STRING', '')
 BOT_B_TOKEN = os.environ.get('BOT_B_TOKEN', '')
 BOT_A_CHAT_ID = int(os.environ.get('BOT_A_CHAT_ID', 0))
 REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
-OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', '')
+
+# Country mapping (5 negara)
+country_mapping = {
+    'AF': '🇦🇫 Afghanistan',
+  'AX': '🇦🇽 Åland Islands',
+  'AL': '🇦🇱 Albania',
+  'DZ': '🇩🇿 Algeria',
+  'AS': '🇦🇸 American Samoa',
+  'AD': '🇦🇩 Andorra',
+  'AO': '🇦🇴 Angola',
+  'AI': '🇦🇮 Anguilla',
+  'AQ': '🇦🇶 Antarctica',
+  'AG': '🇦🇬 Antigua and Barbuda',
+  'AR': '🇦🇷 Argentina',
+  'AM': '🇦🇲 Armenia',
+  'AW': '🇦🇼 Aruba',
+  'AU': '🇦🇺 Australia',
+  'AT': '🇦🇹 Austria',
+  'AZ': '🇦🇿 Azerbaijan',
+  'BS': '🇧🇸 Bahamas',
+  'BH': '🇧🇭 Bahrain',
+  'BD': '🇧🇩 Bangladesh',
+  'BB': '🇧🇧 Barbados',
+  'BY': '🇧🇾 Belarus',
+  'BE': '🇧🇪 Belgium',
+  'BZ': '🇧🇿 Belize',
+  'BJ': '🇧🇯 Benin',
+  'BM': '🇧🇲 Bermuda',
+  'BT': '🇧🇹 Bhutan',
+  'BO': '🇧🇴 Bolivia, Plurinational State of bolivia',
+  'BA': '🇧🇦 Bosnia and Herzegovina',
+  'BW': '🇧🇼 Botswana',
+  'BV': '🇧🇻 Bouvet Island',
+  'BR': '🇧🇷 Brazil',
+  'IO': '🇮🇴 British Indian Ocean Territory',
+  'BN': '🇧🇳 Brunei Darussalam',
+  'BG': '🇧🇬 Bulgaria',
+  'BF': '🇧🇫 Burkina Faso',
+  'BI': '🇧🇮 Burundi',
+  'KH': '🇰🇭 Cambodia',
+  'CM': '🇨🇲 Cameroon',
+  'CA': '🇨🇦 Canada',
+  'CV': '🇨🇻 Cape Verde',
+  'KY': '🇰🇾 Cayman Islands',
+  'CF': '🇨🇫 Central African Republic',
+  'TD': '🇹🇩 Chad',
+  'CL': '🇨🇱 Chile',
+  'CN': '🇨🇳 China',
+  'CX': '🇨🇽 Christmas Island',
+  'CC': '🇨🇨 Cocos (Keeling) Islands',
+  'CO': '🇨🇴 Colombia',
+  'KM': '🇰🇲 Comoros',
+  'CG': '🇨🇬 Congo',
+  'CD': '🇨🇩 Congo, The Democratic Republic of the Congo',
+  'CK': '🇨🇰 Cook Islands',
+  'CR': '🇨🇷 Costa Rica',
+  'CI': "🇨🇮 Cote d'Ivoire",
+  'HR': '🇭🇷 Croatia',
+  'CU': '🇨🇺 Cuba',
+  'CY': '🇨🇾 Cyprus',
+  'CZ': '🇨🇿 Czech Republic',
+  'DK': '🇩🇰 Denmark',
+  'DJ': '🇩🇯 Djibouti',
+  'DM': '🇩🇲 Dominica',
+  'DO': '🇩🇴 Dominican Republic',
+  'EC': '🇪🇨 Ecuador',
+  'EG': '🇪🇬 Egypt',
+  'SV': '🇸🇻 El Salvador',
+  'GQ': '🇬🇶 Equatorial Guinea',
+  'ER': '🇪🇷 Eritrea',
+  'EE': '🇪🇪 Estonia',
+  'ET': '🇪🇹 Ethiopia',
+  'FK': '🇫🇰 Falkland Islands (Malvinas)',
+  'FO': '🇫🇴 Faroe Islands',
+  'FJ': '🇫🇯 Fiji',
+  'FI': '🇫🇮 Finland',
+  'FR': '🇫🇷 France',
+  'GF': '🇬🇫 French Guiana',
+  'PF': '🇵🇫 French Polynesia',
+  'TF': '🇹🇫 French Southern Territories',
+  'GA': '🇬🇦 Gabon',
+  'GM': '🇬🇲 Gambia',
+  'GE': '🇬🇪 Georgia',
+  'DE': '🇩🇪 Germany',
+  'GH': '🇬🇭 Ghana',
+  'GI': '🇬🇮 Gibraltar',
+  'GR': '🇬🇷 Greece',
+  'GL': '🇬🇱 Greenland',
+  'GD': '🇬🇩 Grenada',
+  'GP': '🇬🇵 Guadeloupe',
+  'GU': '🇬🇺 Guam',
+  'GT': '🇬🇹 Guatemala',
+  'GG': '🇬🇬 Guernsey',
+  'GN': '🇬🇳 Guinea',
+  'GW': '🇬🇼 Guinea-Bissau',
+  'GY': '🇬🇾 Guyana',
+  'HT': '🇭🇹 Haiti',
+  'HM': '🇭🇲 Heard Island and Mcdonald Islands',
+  'VA': '🇻🇦 Holy See (Vatican City State)',
+  'HN': '🇭🇳 Honduras',
+  'HK': '🇭🇰 Hong Kong',
+  'HU': '🇭🇺 Hungary',
+  'IS': '🇮🇸 Iceland',
+  'IN': '🇮🇳 India',
+  'ID': '🇮🇩 Indonesia',
+  'IR': '🇮🇷 Iran, Islamic Republic of Persian Gulf',
+  'IQ': '🇮🇶 Iraq',
+  'IE': '🇮🇪 Ireland',
+  'IM': '🇮🇲 Isle of Man',
+  'IL': '🇮🇱 Israel',
+  'IT': '🇮🇹 Italy',
+  'JM': '🇯🇲 Jamaica',
+  'JP': '🇯🇵 Japan',
+  'JE': '🇯🇪 Jersey',
+  'JO': '🇯🇴 Jordan',
+  'KZ': '🇰🇿 Kazakhstan',
+  'KE': '🇰🇪 Kenya',
+  'KI': '🇰🇮 Kiribati',
+  'KP': "🇰🇵 Korea, Democratic People's Republic of Korea",
+  'KR': '🇰🇷 Korea, Republic of South Korea',
+  'XK': '🇽🇰 Kosovo',
+  'KW': '🇰🇼 Kuwait',
+  'KG': '🇰🇬 Kyrgyzstan',
+  'LA': '🇱🇦 Laos',
+  'LV': '🇱🇻 Latvia',
+  'LB': '🇱🇧 Lebanon',
+  'LS': '🇱🇸 Lesotho',
+  'LR': '🇱🇷 Liberia',
+  'LY': '🇱🇾 Libyan Arab Jamahiriya',
+  'LI': '🇱🇮 Liechtenstein',
+  'LT': '🇱🇹 Lithuania',
+  'LU': '🇱🇺 Luxembourg',
+  'MO': '🇲🇴 Macao',
+  'MK': '🇲🇰 Macedonia',
+  'MG': '🇲🇬 Madagascar',
+  'MW': '🇲🇼 Malawi',
+  'MY': '🇲🇾 Malaysia',
+  'MV': '🇲🇻 Maldives',
+  'ML': '🇲🇱 Mali',
+  'MT': '🇲🇹 Malta',
+  'MH': '🇲🇭 Marshall Islands',
+  'MQ': '🇲🇶 Martinique',
+  'MR': '🇲🇷 Mauritania',
+  'MU': '🇲🇺 Mauritius',
+  'YT': '🇾🇹 Mayotte',
+  'MX': '🇲🇽 Mexico',
+  'FM': '🇫🇲 Micronesia, Federated States of Micronesia',
+  'MD': '🇲🇩 Moldova',
+  'MC': '🇲🇨 Monaco',
+  'MN': '🇲🇳 Mongolia',
+  'ME': '🇲🇪 Montenegro',
+  'MS': '🇲🇸 Montserrat',
+  'MA': '🇲🇦 Morocco',
+  'MZ': '🇲🇿 Mozambique',
+  'MM': '🇲🇲 Myanmar',
+  'NA': '🇳🇦 Namibia',
+  'NR': '🇳🇷 Nauru',
+  'NP': '🇳🇵 Nepal',
+  'NL': '🇳🇱 Netherlands',
+  'AN': 'Netherlands Antilles',
+  'NC': '🇳🇨 New Caledonia',
+  'NZ': '🇳🇿 New Zealand',
+  'NI': '🇳🇮 Nicaragua',
+  'NE': '🇳🇪 Niger',
+  'NG': '🇳🇬 Nigeria',
+  'NU': '🇳🇺 Niue',
+  'NF': '🇳🇫 Norfolk Island',
+  'MP': '🇲🇵 Northern Mariana Islands',
+  'NO': '🇳🇴 Norway',
+  'OM': '🇴🇲 Oman',
+  'PK': '🇵🇰 Pakistan',
+  'PW': '🇵🇼 Palau',
+  'PS': '🇵🇸 Palestinian Territory, Occupied',
+  'PA': '🇵🇦 Panama',
+  'PG': '🇵🇬 Papua New Guinea',
+  'PY': '🇵🇾 Paraguay',
+  'PE': '🇵🇪 Peru',
+  'PH': '🇵🇭 Philippines',
+  'PN': '🇵🇳 Pitcairn',
+  'PL': '🇵🇱 Poland',
+  'PT': '🇵🇹 Portugal',
+  'PR': '🇵🇷 Puerto Rico',
+  'QA': '🇶🇦 Qatar',
+  'RO': '🇷🇴 Romania',
+  'RU': '🇷🇺 Russia',
+  'RW': '🇷🇼 Rwanda',
+  'RE': '🇷🇪 Reunion',
+  'BL': '🇧🇱 Saint Barthelemy',
+  'SH': '🇸🇭 Saint Helena, Ascension and Tristan Da Cunha',
+  'KN': '🇰🇳 Saint Kitts and Nevis',
+  'LC': '🇱🇨 Saint Lucia',
+  'MF': '🇲🇫 Saint Martin',
+  'PM': '🇵🇲 Saint Pierre and Miquelon',
+  'VC': '🇻🇨 Saint Vincent and the Grenadines',
+  'WS': '🇼🇸 Samoa',
+  'SM': '🇸🇲 San Marino',
+  'ST': '🇸🇹 Sao Tome and Principe',
+  'SA': '🇸🇦 Saudi Arabia',
+  'SN': '🇸🇳 Senegal',
+  'RS': '🇷🇸 Serbia',
+  'SC': '🇸🇨 Seychelles',
+  'SL': '🇸🇱 Sierra Leone',
+  'SG': '🇸🇬 Singapore',
+  'SK': '🇸🇰 Slovakia',
+  'SI': '🇸🇮 Slovenia',
+  'SB': '🇸🇧 Solomon Islands',
+  'SO': '🇸🇴 Somalia',
+  'ZA': '🇿🇦 South Africa',
+  'SS': '🇸🇸 South Sudan',
+  'GS': '🇬🇸 South Georgia and the South Sandwich Islands',
+  'ES': '🇪🇸 Spain',
+  'LK': '🇱🇰 Sri Lanka',
+  'SD': '🇸🇩 Sudan',
+  'SR': '🇸🇷 Suriname',
+  'SJ': '🇸🇯 Svalbard and Jan Mayen',
+  'SZ': '🇸🇿 Eswatini',
+  'SE': '🇸🇪 Sweden',
+  'CH': '🇨🇭 Switzerland',
+  'SY': '🇸🇾 Syrian Arab Republic',
+  'TW': '🇹🇼 Taiwan',
+  'TJ': '🇹🇯 Tajikistan',
+  'TZ': '🇹🇿 Tanzania, United Republic of Tanzania',
+  'TH': '🇹🇭 Thailand',
+  'TL': '🇹🇱 Timor-Leste',
+  'TG': '🇹🇬 Togo',
+  'TK': '🇹🇰 Tokelau',
+  'TO': '🇹🇴 Tonga',
+  'TT': '🇹🇹 Trinidad and Tobago',
+  'TN': '🇹🇳 Tunisia',
+  'TR': '🇹🇷 Turkey',
+  'TM': '🇹🇲 Turkmenistan',
+  'TC': '🇹🇨 Turks and Caicos Islands',
+  'TV': '🇹🇻 Tuvalu',
+  'UG': '🇺🇬 Uganda',
+  'UA': '🇺🇦 Ukraine',
+  'AE': '🇦🇪 United Arab Emirates',
+  'GB': '🇬🇧 United Kingdom',
+  'US': '🇺🇸 United States',
+  'UY': '🇺🇾 Uruguay',
+  'UZ': '🇺🇿 Uzbekistan',
+  'VU': '🇻🇺 Vanuatu',
+  'VE': '🇻🇪 Venezuela, Bolivarian Republic of Venezuela',
+  'VN': '🇻🇳 Vietnam',
+  'VG': '🇻🇬 Virgin Islands, British',
+  'VI': '🇻🇮 Virgin Islands, U.S.',
+  'WF': '🇼🇫 Wallis and Futuna',
+  'YE': '🇾🇪 Yemen',
+  'ZM': '🇿🇲 Zambia',
+  'ZW': '🇿🇼 Zimbabwe'
+}
 
 # Validasi environment
 if not all([API_ID, API_HASH, SESSION_STRING, BOT_B_TOKEN, BOT_A_CHAT_ID, REDIS_URL]):
     logger.error("❌ Missing required environment variables!")
     exit(1)
-
-if not OCR_SPACE_API_KEY:
-    logger.warning("⚠️ OCR_SPACE_API_KEY tidak ditemukan! OCR online tidak akan berfungsi.")
 
 # Redis connection
 try:
@@ -49,85 +296,100 @@ client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 bot_status = {'in_captcha': False}
 sent_requests = {}
-waiting_for_result = {}  # State per user (chat_id)
+waiting_for_result = {}
 
-# ==================== OCR ONLINE FUNCTION ====================
+# ==================== FUNGSI VALIDASI GOPAY ====================
 
-async def read_number_from_photo_online(message):
-    """Baca angka 6 digit dari foto captcha menggunakan OCR.space API"""
-    try:
-        if not OCR_SPACE_API_KEY:
-            logger.error("❌ OCR_SPACE_API_KEY tidak tersedia")
-            return None
-        
-        logger.info("📸 OCR Online: Downloading captcha photo...")
-        
-        # Download foto
-        photo_path = await message.download_media()
-        logger.info(f"✅ Photo downloaded: {photo_path}")
-        
-        # Baca file sebagai base64
-        with open(photo_path, 'rb') as f:
-            image_data = base64.b64encode(f.read()).decode('utf-8')
-        
-        # Hapus file setelah dibaca
-        os.remove(photo_path)
-        
-        # OCR.space API endpoint
-        url = 'https://api.ocr.space/parse/image'
-        
-        # Payload untuk API
-        payload = {
-            'base64Image': f'data:image/jpeg;base64,{image_data}',
-            'apikey': OCR_SPACE_API_KEY,
-            'language': 'eng',
-            'OCREngine': '2',
-            'isTable': 'false',
-            'scale': 'true',
-            'detectOrientation': 'true'
+async def validate_mlbb_gopay(user_id, server_id):
+    """Validasi akun MLBB menggunakan API GoPay untuk dapat nickname & region"""
+    url = 'https://gopay.co.id/games/v1/order/user-account'
+    headers = {
+        'Content-Type': 'application/json',
+        'X-Client': 'web-mobile',
+        'X-Timestamp': str(int(time.time() * 1000)),
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36'
+    }
+    
+    body = {
+        "code": "MOBILE_LEGENDS",
+        "data": {
+            "userId": str(user_id),
+            "zoneId": str(server_id)
         }
-        
-        logger.info("📤 Sending to OCR.space API...")
-        
-        # Kirim request
-        response = requests.post(url, data=payload, timeout=30)
-        
-        if response.status_code == 200:
-            result = response.json()
-            
-            if result.get('IsErroredOnProcessing') == False:
-                if result.get('ParsedResults') and len(result['ParsedResults']) > 0:
-                    text = result['ParsedResults'][0].get('ParsedText', '')
-                    
-                    # Bersihkan hasil (ambil hanya angka)
-                    text = re.sub(r'[^0-9]', '', text)
-                    logger.info(f"📝 OCR result: '{text}'")
-                    
-                    # Cari 6 digit
-                    match = re.search(r'(\d{6})', text)
-                    if match:
-                        code = match.group(1)
-                        logger.info(f"✅ OCR Online success: {code}")
-                        return code
-                    else:
-                        logger.warning("❌ No 6-digit found in OCR result")
-            else:
-                error = result.get('ErrorMessage', ['Unknown error'])[0]
-                logger.error(f"❌ OCR Error: {error}")
-        else:
-            logger.error(f"❌ API Error: {response.status_code}")
-            
-        return None
-        
+    }
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=body) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    if result.get('data'):
+                        data = result['data']
+                        username = data.get('username', 'Unknown')
+                        
+                        # Ubah + menjadi spasi
+                        username = username.replace('+', ' ')
+                        
+                        region_code = data.get('countryOrigin', 'ID').upper()
+                        region_flag = country_mapping.get(region_code, f'🌍 {region_code}')
+                        
+                        return {
+                            'success': True,
+                            'nickname': username,
+                            'region': region_flag
+                        }
+                return {
+                    'success': False,
+                    'nickname': 'Tidak diketahui',
+                    'region': '🌍 Tidak diketahui'
+                }
     except Exception as e:
-        logger.error(f"❌ OCR Online error: {e}")
-        return None
+        logger.error(f"❌ GoPay API error: {e}")
+        return {
+            'success': False,
+            'nickname': 'Error',
+            'region': '🌍 Error'
+        }
 
-# ==================== RETRY PENDING REQUESTS (OPTIMIZED) ====================
+# ==================== FUNGSI FORMAT OUTPUT ====================
+
+def format_final_output(original_text, nickname, region, uid, sid, android, ios):
+    """Format output final sesuai permintaan"""
+    
+    # Ekstrak bind info dari text asli
+    bind_lines = []
+    lines = original_text.split('\n')
+    
+    for line in lines:
+        if any(keyword in line for keyword in ['Moonton', 'Google Play', 'Facebook', 'Tiktok', 'VK', 'Apple', 'GCID', 'Telegram', 'WhatsApp']):
+            clean_line = line.replace('✧', '•').strip()
+            bind_lines.append(clean_line)
+    
+    # Gabungkan bind info
+    bind_info = '\n'.join(bind_lines) if bind_lines else '• Data bind tidak tersedia'
+    
+    # Format final
+    final = f"""INFORMASI AKUN
+
+ID: {uid}
+Server: {sid}
+Nickname: {nickname}
+Region: {region}
+
+BIND INFO:
+{bind_info}
+
+Device Login:
+• Android: {android} perangkat
+• iOS: {ios} perangkat"""
+    
+    return final
+
+# ==================== RETRY PENDING REQUESTS ====================
 
 async def retry_pending_requests():
-    """Kirim ulang request yang pending setelah captcha selesai - VERSI CEPAT"""
-    logger.info("🔄 Retrying pending requests immediately...")
+    """Kirim ulang request yang pending setelah captcha selesai"""
+    logger.info("🔄 Retrying pending requests...")
     
     retry_count = 0
     while True:
@@ -147,14 +409,12 @@ async def retry_pending_requests():
         await client.send_message(BOT_A_CHAT_ID, cmd)
         logger.info(f"🔄 Retry: {cmd} for user {request_data['chat_id']}")
         
-        # Simpan kembali dengan expiry baru
         r.setex(request_id, 300, json.dumps(request_data))
-        
         retry_count += 1
-        await asyncio.sleep(1)  # JEDA 1 DETIK (aman dari rate limit)
+        await asyncio.sleep(1)
     
     if retry_count > 0:
-        logger.info(f"✅ Retried {retry_count} requests in {retry_count} seconds")
+        logger.info(f"✅ Retried {retry_count} requests")
 
 # ==================== TELEGRAM EVENT HANDLER ====================
 
@@ -188,18 +448,12 @@ async def message_handler(event):
     
     logger.info("🎯🎯🎯 PESAN DARI BOT A DITERIMA!")
     
-    # ===== CEK APAKAH INI HASIL INFO VALID (PALING ATAS) =====
-    if '──────────────────────' in text:
+    # ===== CEK APAKAH INI HASIL INFO VALID =====
+    if 'BIND ACCOUNT INFO' in text or 'INFORMASI AKUN' in text:
         logger.info("✅✅✅ INI HASIL INFO VALID! FORWARDING KE USER...")
-        logger.info(f"📝 Text length: {len(text)}")
-        
-        # Cek queue sebelum ambil
-        queue_length = r.llen('pending_requests')
-        logger.info(f"📊 Queue length before pop: {queue_length}")
         
         # Ambil request dari queue
         request_id = r.lpop('pending_requests')
-        logger.info(f"📋 Request ID from queue: {request_id}")
         
         if request_id:
             request_id = request_id.decode('utf-8')
@@ -212,30 +466,43 @@ async def message_handler(event):
             
             request_data = json.loads(request_data_json)
             user_id = request_data['chat_id']
-            logger.info(f"👤 Forward to user: {user_id}")
+            
+            # Ekstrak ID dan Server dari text
+            id_match = re.search(r'ID:?\s*(\d+)', text)
+            server_match = re.search(r'Server:?\s*(\d+)', text)
+            
+            # Ekstrak device login
+            android_match = re.search(r'Android:?\s*(\d+)', text)
+            ios_match = re.search(r'iOS:?\s*(\d+)', text)
+            
+            uid = id_match.group(1) if id_match else 'Unknown'
+            sid = server_match.group(1) if server_match else 'Unknown'
+            android = android_match.group(1) if android_match else '0'
+            ios = ios_match.group(1) if ios_match else '0'
+            
+            # Panggil API GoPay untuk dapat nickname & region
+            gopay_result = await validate_mlbb_gopay(uid, sid)
+            nickname = gopay_result['nickname']
+            region = gopay_result['region']
+            
+            # Format output final
+            final_output = format_final_output(text, nickname, region, uid, sid, android, ios)
             
             # Kirim ke user via Bot B
             url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
             data = {
                 'chat_id': user_id,
-                'text': text,
+                'text': final_output,
                 'parse_mode': 'HTML'
             }
             
             try:
                 response = requests.post(url, json=data, timeout=10)
-                logger.info(f"📥 Response status: {response.status_code}")
-                
                 if response.status_code == 200:
                     logger.info(f"✅✅✅ TERKIRIM KE USER {user_id}!")
                     r.delete(request_id)
-                    
-                    # Reset state untuk user ini
-                    if user_id in waiting_for_result:
-                        waiting_for_result[user_id] = False
                 else:
                     logger.error(f"❌ Gagal forward: {response.status_code}")
-                    logger.error(f"❌ Response: {response.text}")
                     r.rpush('pending_requests', request_id)
             except Exception as e:
                 logger.error(f"❌ Forward error: {e}")
@@ -253,9 +520,9 @@ async def message_handler(event):
         return
     
     # ===== CEK APAKAH INI PESAN RATE LIMIT =====
-    if 'please wait' in text.lower() or 'rate limit' in text.lower():
-        logger.warning("⏳ RATE LIMIT DARI BOT A! Menunggu 60 detik...")
-        await asyncio.sleep(60)
+    if 'please wait' in text.lower():
+        logger.warning("⏳ RATE LIMIT DARI BOT A! Menunggu 30 detik...")
+        await asyncio.sleep(30)
         logger.info("✅ Selesai menunggu rate limit")
         logger.info("=" * 80)
         return
@@ -266,91 +533,73 @@ async def message_handler(event):
     
     # Cek 1: Ada foto (captcha)
     if message.photo:
-        logger.info("📸 PHOTO DETECTED - This is a captcha")
+        logger.info("📸 PHOTO DETECTED - Captcha")
         is_captcha = True
         
-        # SET STATE untuk user yang menunggu (ambil dari queue teratas)
+        # SET STATE
         top_request = r.lindex('pending_requests', 0)
         if top_request:
             top_req_id = top_request.decode('utf-8')
             top_req_data = json.loads(r.get(top_req_id))
             waiting_user = top_req_data['chat_id']
             waiting_for_result[waiting_user] = True
-            logger.info(f"📋 Waiting for result SET to TRUE for user {waiting_user}")
         
-        # Cek angka di caption (bisa dengan spasi)
+        # Cek angka di caption
         if text:
-            # Ambil semua digit
             digits = re.findall(r'\d', text)
             if len(digits) >= 6:
                 captcha_code = ''.join(digits[:6])
-                logger.info(f"✅ Found code in caption: {captcha_code}")
     
     # Cek 2: Teks mengandung angka 6 digit + kata kunci
     if not is_captcha and text:
-        # Ambil semua digit
         digits = re.findall(r'\d', text)
         if len(digits) >= 6:
             keywords = ['captcha', 'verify', 'code', 'enter', 'kode']
             if any(kw in text.lower() for kw in keywords):
                 is_captcha = True
                 captcha_code = ''.join(digits[:6])
-                logger.info(f"✅ Found code in text: {captcha_code}")
                 
-                # SET STATE untuk user yang menunggu
                 top_request = r.lindex('pending_requests', 0)
                 if top_request:
                     top_req_id = top_request.decode('utf-8')
                     top_req_data = json.loads(r.get(top_req_id))
                     waiting_user = top_req_data['chat_id']
                     waiting_for_result[waiting_user] = True
-                    logger.info(f"📋 Waiting for result SET to TRUE for user {waiting_user}")
     
     # ===== JIKA CAPTCHA =====
     if is_captcha:
         logger.warning("🚫 CAPTCHA PROCESSING...")
         
-        # Jika captcha_code belum ada, pakai OCR
-        if not captcha_code and message.photo:
-            logger.info("🔍 No text code, trying OCR...")
-            captcha_code = await read_number_from_photo_online(message)
-        
         if captcha_code and len(captcha_code) == 6:
             logger.info(f"✅✅✅ CAPTCHA CODE: {captcha_code}")
             bot_status['in_captcha'] = True
             
-            # Kirim verifikasi ke Bot A
             await client.send_message(BOT_A_CHAT_ID, f"/verify {captcha_code}")
             logger.info(f"📤 Verification sent: /verify {captcha_code}")
             
-            await asyncio.sleep(2)  # TUNGGU 2 DETIK (cukup)
+            await asyncio.sleep(2)
             bot_status['in_captcha'] = False
             
-            # Proses ulang request pending LANGSUNG (tanpa delay)
             await retry_pending_requests()
         else:
             logger.error("❌❌❌ Gagal mendapatkan captcha code")
-            await asyncio.sleep(30)  # TUNGGU 30 DETIK (lebih cepat dari 60)
+            await asyncio.sleep(30)
             bot_status['in_captcha'] = False
         
         logger.info("=" * 80)
         return
     
-    # ===== PESAN LAIN DARI BOT A (IGNORE) =====
     logger.info("❌ Pesan lain dari Bot A - IGNORED")
-    logger.info(f"📋 Text: {text[:50]}")
     logger.info("=" * 80)
 
 @events.register(events.MessageEdited)
 async def message_edit_handler(event):
-    """Handler untuk pesan yang diedit"""
     logger.info(f"✏️ Message edited in chat {event.chat_id}")
 
-# ==================== QUEUE PROCESSOR (OPTIMIZED) ====================
+# ==================== QUEUE PROCESSOR ====================
 
 async def process_queue():
-    """Monitor queue dan kirim request ke Bot A - VERSI CEPAT"""
-    logger.info("🔄 Queue processor started (optimized mode)")
+    logger.info("🔄 Queue processor started")
     
     while True:
         try:
@@ -359,28 +608,22 @@ async def process_queue():
                 logger.info(f"📊 Queue length: {queue_length}")
             
             if not bot_status['in_captcha'] and queue_length > 0:
-                # Ambil request pertama tanpa menghapus
                 request_id_bytes = r.lindex('pending_requests', 0)
                 
                 if request_id_bytes:
                     request_id = request_id_bytes.decode('utf-8')
                     current_time = time.time()
                     
-                    # CEK APAKAH SUDAH PERNAH DIKIRIM
                     if request_id in sent_requests:
                         last_sent = sent_requests[request_id]
                         time_diff = current_time - last_sent
                         
-                        # JIKA SUDAH DIKIRIM KURANG DARI 15 DETIK, TUNGGU
                         if time_diff < 15:
-                            logger.info(f"⏳ Already sent {time_diff:.1f}s ago, waiting...")
                             await asyncio.sleep(2)
                             continue
                     
-                    # Ambil data request
                     request_data_json = r.get(request_id)
                     if request_data_json is None:
-                        # Data tidak ada, hapus dari queue
                         r.lpop('pending_requests')
                         continue
                     
@@ -389,23 +632,23 @@ async def process_queue():
                     
                     try:
                         await client.send_message(BOT_A_CHAT_ID, cmd)
-                        logger.info(f"📤 Sent to Bot A: {cmd} for user {request_data['chat_id']}")
+                        logger.info(f"📤 Sent to Bot A: {cmd}")
                         sent_requests[request_id] = current_time
                     except Exception as e:
                         logger.error(f"❌ Failed to send to Bot A: {e}")
         except Exception as e:
             logger.error(f"❌ Queue processor error: {e}")
         
-        await asyncio.sleep(2)  # JEDA LOOP 2 DETIK (lebih responsif)
+        await asyncio.sleep(2)
 
-# ==================== MAIN (TANPA /START MANUAL) ====================
+# ==================== MAIN ====================
 
 async def main():
     global sent_requests, waiting_for_result
     sent_requests = {}
     waiting_for_result = {}
     
-    logger.info("🚀 Starting Telethon userbot (optimized)...")
+    logger.info("🚀 Starting Telethon userbot...")
     
     try:
         await client.start()
@@ -413,14 +656,11 @@ async def main():
         
         me = await client.get_me()
         logger.info(f"✅ Logged in as: {me.first_name} (@{me.username})")
-        logger.info(f"✅ User ID: {me.id}")
         
-        # LANGSUNG DAFTARKAN HANDLER (TANPA KIRIM /start KE BOT A)
         client.add_event_handler(message_handler)
         client.add_event_handler(message_edit_handler)
         logger.info("✅ Event handlers registered")
         
-        # LANGSUNG JALANKAN QUEUE PROCESSOR
         await process_queue()
         
     except Exception as e:
