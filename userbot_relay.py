@@ -123,30 +123,19 @@ async def read_number_from_photo_online(message):
         logger.error(f"❌ OCR Online error: {e}")
         return None
 
-# ==================== RETRY PENDING REQUESTS ====================
+# ==================== RETRY PENDING REQUESTS (OPTIMIZED) ====================
 
 async def retry_pending_requests():
-    """Kirim ulang request yang pending setelah captcha selesai"""
-    logger.info("🔄 Retrying pending requests...")
-    
-    # TUNGGU 60 DETIK DULU (KARENA RATE LIMIT)
-    logger.info("⏳ Waiting 60 seconds due to rate limit...")
-    await asyncio.sleep(60)
+    """Kirim ulang request yang pending setelah captcha selesai - VERSI CEPAT"""
+    logger.info("🔄 Retrying pending requests immediately...")
     
     retry_count = 0
-    # Kumpulkan semua request yang pending
-    pending_requests = []
     while True:
         request_id = r.lpop('pending_requests')
         if not request_id:
             break
-        pending_requests.append(request_id)
-    
-    logger.info(f"📋 Found {len(pending_requests)} pending requests to retry")
-    
-    # Proses satu per satu dengan jeda
-    for request_id_bytes in pending_requests:
-        request_id = request_id_bytes.decode('utf-8')
+            
+        request_id = request_id.decode('utf-8')
         request_data_json = r.get(request_id)
         
         if request_data_json is None:
@@ -162,10 +151,10 @@ async def retry_pending_requests():
         r.setex(request_id, 300, json.dumps(request_data))
         
         retry_count += 1
-        await asyncio.sleep(5)  # JEDA ANTAR RETRY 5 DETIK
+        await asyncio.sleep(1)  # JEDA 1 DETIK (aman dari rate limit)
     
     if retry_count > 0:
-        logger.info(f"✅ Retried {retry_count} requests")
+        logger.info(f"✅ Retried {retry_count} requests in {retry_count} seconds")
 
 # ==================== TELEGRAM EVENT HANDLER ====================
 
@@ -334,14 +323,14 @@ async def message_handler(event):
             await client.send_message(BOT_A_CHAT_ID, f"/verify {captcha_code}")
             logger.info(f"📤 Verification sent: /verify {captcha_code}")
             
-            await asyncio.sleep(3)
+            await asyncio.sleep(2)  # TUNGGU 2 DETIK (cukup)
             bot_status['in_captcha'] = False
             
-            # Proses ulang request pending
+            # Proses ulang request pending LANGSUNG (tanpa delay)
             await retry_pending_requests()
         else:
             logger.error("❌❌❌ Gagal mendapatkan captcha code")
-            await asyncio.sleep(60)
+            await asyncio.sleep(30)  # TUNGGU 30 DETIK (lebih cepat dari 60)
             bot_status['in_captcha'] = False
         
         logger.info("=" * 80)
@@ -357,11 +346,11 @@ async def message_edit_handler(event):
     """Handler untuk pesan yang diedit"""
     logger.info(f"✏️ Message edited in chat {event.chat_id}")
 
-# ==================== QUEUE PROCESSOR ====================
+# ==================== QUEUE PROCESSOR (OPTIMIZED) ====================
 
 async def process_queue():
-    """Monitor queue dan kirim request ke Bot A"""
-    logger.info("🔄 Queue processor started")
+    """Monitor queue dan kirim request ke Bot A - VERSI CEPAT"""
+    logger.info("🔄 Queue processor started (optimized mode)")
     
     while True:
         try:
@@ -377,24 +366,21 @@ async def process_queue():
                     request_id = request_id_bytes.decode('utf-8')
                     current_time = time.time()
                     
+                    # CEK APAKAH SUDAH PERNAH DIKIRIM
                     if request_id in sent_requests:
                         last_sent = sent_requests[request_id]
                         time_diff = current_time - last_sent
                         
-                        if time_diff < 30:
+                        # JIKA SUDAH DIKIRIM KURANG DARI 15 DETIK, TUNGGU
+                        if time_diff < 15:
                             logger.info(f"⏳ Already sent {time_diff:.1f}s ago, waiting...")
-                            await asyncio.sleep(5)
-                            continue
-                        elif time_diff > 120:
-                            logger.warning(f"⚠️ Request expired (>2 menit), removing")
-                            r.lpop('pending_requests')
-                            r.delete(request_id)
-                            if request_id in sent_requests:
-                                del sent_requests[request_id]
+                            await asyncio.sleep(2)
                             continue
                     
+                    # Ambil data request
                     request_data_json = r.get(request_id)
                     if request_data_json is None:
+                        # Data tidak ada, hapus dari queue
                         r.lpop('pending_requests')
                         continue
                     
@@ -410,16 +396,16 @@ async def process_queue():
         except Exception as e:
             logger.error(f"❌ Queue processor error: {e}")
         
-        await asyncio.sleep(5)
+        await asyncio.sleep(2)  # JEDA LOOP 2 DETIK (lebih responsif)
 
-# ==================== MAIN ====================
+# ==================== MAIN (TANPA /START MANUAL) ====================
 
 async def main():
     global sent_requests, waiting_for_result
     sent_requests = {}
     waiting_for_result = {}
     
-    logger.info("🚀 Starting Telethon userbot...")
+    logger.info("🚀 Starting Telethon userbot (optimized)...")
     
     try:
         await client.start()
@@ -427,11 +413,14 @@ async def main():
         
         me = await client.get_me()
         logger.info(f"✅ Logged in as: {me.first_name} (@{me.username})")
+        logger.info(f"✅ User ID: {me.id}")
         
+        # LANGSUNG DAFTARKAN HANDLER (TANPA KIRIM /start KE BOT A)
         client.add_event_handler(message_handler)
         client.add_event_handler(message_edit_handler)
         logger.info("✅ Event handlers registered")
         
+        # LANGSUNG JALANKAN QUEUE PROCESSOR
         await process_queue()
         
     except Exception as e:
