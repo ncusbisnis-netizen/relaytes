@@ -4,11 +4,13 @@
   "description": "Relay Bot untuk @bengkelmlbb_bot",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "start:bot": "node bot-b.js",
+    "start:relay": "node userbot-relay.js"
   },
   "dependencies": {
     "telegraf": "^4.15.3",
-    "gramjs": "^1.0.0",
+    "telegram": "^2.25.0",
     "redis": "^4.6.11",
     "dotenv": "^16.3.1",
     "axios": "^1.6.2",
