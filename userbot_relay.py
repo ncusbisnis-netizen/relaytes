@@ -10,8 +10,10 @@ import json
 import requests
 import pytesseract
 from PIL import Image, ImageEnhance
+import cv2
+import numpy as np
 
-# Set path Tesseract untuk Heroku (WAJIB!)
+# Set path Tesseract untuk Heroku
 pytesseract.pytesseract.tesseract_cmd = '/app/.apt/usr/bin/tesseract'
 os.environ['TESSDATA_PREFIX'] = '/app/.apt/usr/share/tesseract-ocr/5/tessdata/'
 
@@ -33,12 +35,6 @@ REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
 # Validasi environment
 if not all([API_ID, API_HASH, SESSION_STRING, BOT_B_TOKEN, BOT_A_CHAT_ID, REDIS_URL]):
     logger.error("❌ Missing required environment variables!")
-    logger.error(f"API_ID: {'✅' if API_ID else '❌'}")
-    logger.error(f"API_HASH: {'✅' if API_HASH else '❌'}")
-    logger.error(f"SESSION_STRING: {'✅' if SESSION_STRING else '❌'}")
-    logger.error(f"BOT_B_TOKEN: {'✅' if BOT_B_TOKEN else '❌'}")
-    logger.error(f"BOT_A_CHAT_ID: {'✅' if BOT_A_CHAT_ID else '❌'}")
-    logger.error(f"REDIS_URL: {'✅' if REDIS_URL else '❌'}")
     exit(1)
 
 # Redis connection
@@ -50,62 +46,106 @@ except Exception as e:
     logger.error(f"❌ Redis connection failed: {e}")
     exit(1)
 
-# Telethon Client dengan StringSession
+# Telethon Client
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 bot_status = {'in_captcha': False}
 sent_requests = {}
 
-# ==================== OCR FUNCTION (FALLBACK) ====================
+# ==================== OCR FUNCTION (IMPROVED) ====================
 
 async def read_number_from_photo(message):
-    """Baca angka 6 digit dari foto captcha - FALLBACK jika tidak ada teks"""
+    """Baca angka 6 digit dari foto captcha dengan preprocessing optimal"""
+    photo_path = None
+    temp_path = None
+    
     try:
-        logger.info("📸 OCR Fallback: Downloading captcha photo...")
-        
-        # Download foto
+        logger.info("📸 OCR: Downloading captcha photo...")
         photo_path = await message.download_media()
         logger.info(f"✅ Photo downloaded: {photo_path}")
         
-        # Buka dengan PIL
+        # ===== PREPROCESSING 1: PIL Basic =====
         img = Image.open(photo_path)
         
         # Convert ke grayscale
         img = img.convert('L')
         
-        # Tingkatkan kontras
+        # Tingkatkan kontras (agresif)
         enhancer = ImageEnhance.Contrast(img)
-        img = enhancer.enhance(2.0)
+        img = enhancer.enhance(3.0)
         
-        # Threshold untuk angka putih
-        img = img.point(lambda p: p > 200 and 255)
+        # Threshold sederhana
+        img = img.point(lambda p: p > 180 and 255)
         
-        # Simpan sementara
-        temp_path = f"/tmp/ocr_{int(time.time())}.png"
+        temp_path = f"/tmp/ocr_pil_{int(time.time())}.png"
         img.save(temp_path)
         
-        # OCR dengan Tesseract
+        # OCR attempt 1
         custom_config = r'--oem 3 --psm 8 -c tessedit_char_whitelist=0123456789'
         text = pytesseract.image_to_string(temp_path, config=custom_config)
-        
-        # Bersihkan file
-        os.remove(photo_path)
-        os.remove(temp_path)
-        
-        # Ambil 6 digit
         text = re.sub(r'[^0-9]', '', text)
-        match = re.search(r'(\d{6})', text)
         
-        if match:
-            code = match.group(1)
-            logger.info(f"✅ OCR success: {code}")
+        if re.search(r'\d{6}', text):
+            code = re.search(r'\d{6}', text).group()
+            logger.info(f"✅ OCR success (PIL): {code}")
             return code
-        logger.warning("❌ OCR failed: no 6-digit number found")
+        
+        # ===== PREPROCESSING 2: OpenCV Advanced =====
+        logger.info("🔄 Trying OpenCV preprocessing...")
+        
+        img_cv = cv2.imread(photo_path)
+        gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+        
+        # Adaptive threshold
+        thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                       cv2.THRESH_BINARY_INV, 11, 2)
+        
+        # Dilasi untuk mempertebal angka
+        kernel = np.ones((2, 2), np.uint8)
+        dilated = cv2.dilate(thresh, kernel, iterations=1)
+        
+        # Resize 2x
+        resized = cv2.resize(dilated, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+        
+        temp_path2 = f"/tmp/ocr_cv_{int(time.time())}.png"
+        cv2.imwrite(temp_path2, resized)
+        
+        # OCR attempt 2
+        text2 = pytesseract.image_to_string(temp_path2, config=custom_config)
+        text2 = re.sub(r'[^0-9]', '', text2)
+        
+        if re.search(r'\d{6}', text2):
+            code = re.search(r'\d{6}', text2).group()
+            logger.info(f"✅ OCR success (OpenCV): {code}")
+            return code
+        
+        # ===== PREPROCESSING 3: Inverted colors =====
+        inverted = cv2.bitwise_not(resized)
+        temp_path3 = f"/tmp/ocr_inv_{int(time.time())}.png"
+        cv2.imwrite(temp_path3, inverted)
+        
+        text3 = pytesseract.image_to_string(temp_path3, config=custom_config)
+        text3 = re.sub(r'[^0-9]', '', text3)
+        
+        if re.search(r'\d{6}', text3):
+            code = re.search(r'\d{6}', text3).group()
+            logger.info(f"✅ OCR success (Inverted): {code}")
+            return code
+        
+        logger.warning("❌ All OCR attempts failed")
         return None
         
     except Exception as e:
         logger.error(f"❌ OCR error: {e}")
         return None
+    finally:
+        # Bersihkan semua file temporary
+        for path in [photo_path, temp_path, temp_path2, temp_path3]:
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except:
+                    pass
 
 # ==================== RETRY PENDING REQUESTS ====================
 
@@ -149,7 +189,7 @@ async def message_handler(event):
     chat_id = event.chat_id
     sender_id = event.sender_id
     
-    # Ambil teks dari mana pun
+    # Ambil teks
     text = message.text or message.message or ''
     
     # LOG LENGKAP
@@ -162,124 +202,124 @@ async def message_handler(event):
     logger.info(f"📸 Has Photo: {bool(message.photo)}")
     logger.info(f"📝 Text: '{text[:200]}'")
     
-    # ===== CEK APAKAH DARI BOT A =====
-    is_from_bot_a = False
-    
-    if chat_id == BOT_A_CHAT_ID:
-        is_from_bot_a = True
-        logger.info("✅ MATCH: Chat ID = Bot A")
-    
-    if sender_id == BOT_A_CHAT_ID:
-        is_from_bot_a = True
-        logger.info("✅ MATCH: Sender ID = Bot A")
-    
-    if not is_from_bot_a:
+    # CEK APAKAH DARI BOT A
+    if chat_id != BOT_A_CHAT_ID and sender_id != BOT_A_CHAT_ID:
         logger.info("❌ Bukan dari Bot A")
         logger.info("=" * 80)
         return
     
-    # ===== INI PESAN DARI BOT A =====
     logger.info("🎯🎯🎯 PESAN DARI BOT A DITERIMA!")
     
-    # ===== CEK CAPTCHA - PRIORITAS AMBIL DARI TEKS =====
+    # ===== CEK CAPTCHA =====
     is_captcha = False
     captcha_code = None
     
-    # CEK 1: Cari angka 6 digit di TEKS (caption atau message)
-    if text:
+    # Cek 1: Ada foto (kemungkinan besar captcha)
+    if message.photo:
+        logger.info("📸 PHOTO DETECTED - This is a captcha")
+        is_captcha = True
+        
+        # Cek apakah ada angka di teks/caption
+        if text:
+            six_digit = re.findall(r'(\d{6})', text)
+            if six_digit:
+                captcha_code = six_digit[0]
+                logger.info(f"✅ Found code in caption: {captcha_code}")
+    
+    # Cek 2: Teks mengandung angka 6 digit + kata kunci
+    if not captcha_code and text:
         six_digit = re.findall(r'(\d{6})', text)
         if six_digit:
-            # Ambil angka 6 digit pertama
-            captcha_code = six_digit[0]
-            
-            # Cek apakah ini captcha (ada foto atau kata kunci)
-            if message.photo:
+            keywords = ['captcha', 'verify', 'code', 'enter', 'kode']
+            if any(kw in text.lower() for kw in keywords):
                 is_captcha = True
-                logger.info(f"📸 PHOTO + TEXT CAPTCHA: {captcha_code}")
-            else:
-                # Cek kata kunci
-                keywords = ['captcha', 'verify', 'code', 'enter', 'verification', 'kode']
-                if any(kw in text.lower() for kw in keywords):
-                    is_captcha = True
-                    logger.info(f"✅ TEXT CAPTCHA with keyword: {captcha_code}")
+                captcha_code = six_digit[0]
+                logger.info(f"✅ Found code in text: {captcha_code}")
     
-    # CEK 2: Baris pertama 6 digit (format umum captcha)
+    # Cek 3: Baris pertama 6 digit
     if not captcha_code and text:
         lines = text.strip().split('\n')
         if lines and lines[0].strip().isdigit() and len(lines[0].strip()) == 6:
-            captcha_code = lines[0].strip()
             is_captcha = True
-            logger.info(f"✅ CAPTCHA from first line: {captcha_code}")
+            captcha_code = lines[0].strip()
+            logger.info(f"✅ Found code in first line: {captcha_code}")
     
-    # CEK 3: Foto tanpa teks (pake OCR)
-    if not captcha_code and message.photo:
-        logger.info("📸 PHOTO WITHOUT TEXT - trying OCR fallback")
-        is_captcha = True
-        captcha_code = await read_number_from_photo(message)
-    
-    # ===== JIKA CAPTCHA, VERIFIKASI =====
-    if is_captcha and captcha_code and len(captcha_code) == 6:
-        logger.warning(f"🚫🚫🚫 CAPTCHA CODE: {captcha_code}")
-        bot_status['in_captcha'] = True
+    # ===== JIKA CAPTCHA =====
+    if is_captcha:
+        logger.warning("🚫 CAPTCHA DETECTED!")
         
-        # Kirim verifikasi ke Bot A
-        await client.send_message(BOT_A_CHAT_ID, f"/verify {captcha_code}")
-        logger.info(f"📤📤📤 Verification sent: /verify {captcha_code}")
+        # Jika captcha_code belum ada (foto tanpa teks), pakai OCR
+        if not captcha_code and message.photo:
+            logger.info("🔍 No text code found, trying OCR...")
+            captcha_code = await read_number_from_photo(message)
         
-        # Tunggu sebentar
-        await asyncio.sleep(3)
-        
-        bot_status['in_captcha'] = False
-        logger.info("✅ Captcha handled successfully")
-        
-        # Proses ulang request pending
-        await retry_pending_requests()
+        if captcha_code and len(captcha_code) == 6:
+            logger.info(f"✅✅✅ CAPTCHA CODE: {captcha_code}")
+            bot_status['in_captcha'] = True
+            
+            # Kirim verifikasi ke Bot A
+            await client.send_message(BOT_A_CHAT_ID, f"/verify {captcha_code}")
+            logger.info(f"📤📤📤 Verification sent: /verify {captcha_code}")
+            
+            # Tunggu sebentar
+            await asyncio.sleep(3)
+            
+            bot_status['in_captcha'] = False
+            logger.info("✅ Captcha handled")
+            
+            # Proses ulang request pending
+            await retry_pending_requests()
+        else:
+            logger.error("❌❌❌ Gagal mendapatkan captcha code")
+            logger.info("⏳ Menunggu 60 detik sebelum coba lagi...")
+            await asyncio.sleep(60)
+            bot_status['in_captcha'] = False
         
         logger.info("=" * 80)
         return
     
-    # ===== BUKAN CAPTCHA - HASIL INFO =====
-    if text:
-        logger.info("📨📨📨 Hasil info dari Bot A")
+    # ===== BUKAN CAPTCHA - INI HASIL INFO =====
+    # HANYA sampai di sini jika bukan captcha
+    logger.info("📨📨📨 Memproses sebagai hasil info (BUKAN captcha)")
+    
+    # Ambil request dari queue
+    request_id = r.lpop('pending_requests')
+    
+    if request_id:
+        request_id = request_id.decode('utf-8')
+        logger.info(f"📋 Request ID: {request_id}")
         
-        # Ambil request dari queue
-        request_id = r.lpop('pending_requests')
+        request_data_json = r.get(request_id)
         
-        if request_id:
-            request_id = request_id.decode('utf-8')
-            logger.info(f"📋 Request ID: {request_id}")
-            
-            request_data_json = r.get(request_id)
-            
-            if request_data_json is None:
-                logger.warning(f"⚠️ Request expired")
-                logger.info("=" * 80)
-                return
-            
-            request_data = json.loads(request_data_json)
-            user_id = request_data['chat_id']
-            
-            # Kirim ke user via Bot B
-            url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
-            data = {
-                'chat_id': user_id,
-                'text': text,
-                'parse_mode': 'HTML'
-            }
-            
-            try:
-                response = requests.post(url, json=data, timeout=10)
-                if response.status_code == 200:
-                    logger.info(f"✅✅✅ Terkirim ke user {user_id}")
-                    r.delete(request_id)
-                else:
-                    logger.error(f"❌ Gagal forward: {response.status_code}")
-                    r.rpush('pending_requests', request_id)
-            except Exception as e:
-                logger.error(f"❌ Forward error: {e}")
+        if request_data_json is None:
+            logger.warning(f"⚠️ Request expired")
+            logger.info("=" * 80)
+            return
+        
+        request_data = json.loads(request_data_json)
+        user_id = request_data['chat_id']
+        
+        # Kirim ke user via Bot B
+        url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
+        data = {
+            'chat_id': user_id,
+            'text': text,
+            'parse_mode': 'HTML'
+        }
+        
+        try:
+            response = requests.post(url, json=data, timeout=10)
+            if response.status_code == 200:
+                logger.info(f"✅✅✅ Terkirim ke user {user_id}")
+                r.delete(request_id)
+            else:
+                logger.error(f"❌ Gagal forward: {response.status_code}")
                 r.rpush('pending_requests', request_id)
-        else:
-            logger.warning("⚠️ Tidak ada request pending")
+        except Exception as e:
+            logger.error(f"❌ Forward error: {e}")
+            r.rpush('pending_requests', request_id)
+    else:
+        logger.warning("⚠️ Tidak ada request pending")
     
     logger.info("=" * 80)
 
@@ -316,7 +356,7 @@ async def process_queue():
                             await asyncio.sleep(5)
                             continue
                         elif time_diff > 120:
-                            logger.warning(f"⚠️ Request expired (>2 menit), removing from queue")
+                            logger.warning(f"⚠️ Request expired (>2 menit), removing")
                             r.lpop('pending_requests')
                             r.delete(request_id)
                             if request_id in sent_requests:
@@ -351,21 +391,16 @@ async def main():
     logger.info("🚀 Starting Telethon userbot...")
     
     try:
-        # Start client
         await client.start()
         logger.info("✅ Telethon client started!")
         
-        # Dapatkan info user
         me = await client.get_me()
         logger.info(f"✅ Logged in as: {me.first_name} (@{me.username})")
-        logger.info(f"✅ User ID: {me.id}")
         
-        # Daftarkan event handlers
         client.add_event_handler(message_handler)
         client.add_event_handler(message_edit_handler)
         logger.info("✅ Event handlers registered")
         
-        # Jalankan queue processor
         await process_queue()
         
     except Exception as e:
