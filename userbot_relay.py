@@ -10,8 +10,7 @@ import json
 import requests
 import base64
 import aiohttp
-import pytesseract
-from PIL import Image
+from PIL import Image, ImageEnhance
 
 # Setup logging
 logging.basicConfig(
@@ -27,6 +26,7 @@ SESSION_STRING = os.environ.get('SESSION_STRING', '')
 BOT_B_TOKEN = os.environ.get('BOT_B_TOKEN', '')
 BOT_A_CHAT_ID = int(os.environ.get('BOT_A_CHAT_ID', 0))
 REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
+OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', '')
 
 # Country mapping (5 negara)
 country_mapping = {
@@ -283,6 +283,9 @@ if not all([API_ID, API_HASH, SESSION_STRING, BOT_B_TOKEN, BOT_A_CHAT_ID, REDIS_
     logger.error("❌ Missing required environment variables!")
     exit(1)
 
+if not OCR_SPACE_API_KEY:
+    logger.warning("⚠️ OCR_SPACE_API_KEY tidak ditemukan! OCR online tidak akan berfungsi.")
+
 # Redis connection
 try:
     r = redis.from_url(REDIS_URL)
@@ -292,55 +295,12 @@ except Exception as e:
     logger.error(f"❌ Redis connection failed: {e}")
     exit(1)
 
-# Telethon Client - LANGSUNG JALAN TANPA /start
+# Telethon Client
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 bot_status = {'in_captcha': False}
 sent_requests = {}
 waiting_for_result = {}
-
-# ==================== FUNGSI OCR UNTUK CAPTCHA ====================
-
-async def read_captcha_from_photo(message):
-    """Baca angka 6 digit dari foto captcha"""
-    try:
-        logger.info("📸 OCR: Downloading captcha photo...")
-        
-        # Download foto
-        photo_path = await message.download_media()
-        logger.info(f"✅ Photo downloaded: {photo_path}")
-        
-        # Buka dengan PIL
-        img = Image.open(photo_path)
-        
-        # Convert ke grayscale
-        img = img.convert('L')
-        
-        # Threshold sederhana
-        img = img.point(lambda p: p > 200 and 255)
-        
-        # OCR dengan Tesseract (khusus angka)
-        custom_config = r'--oem 3 --psm 8 -c tessedit_char_whitelist=0123456789'
-        text = pytesseract.image_to_string(img, config=custom_config)
-        
-        # Hapus file
-        os.remove(photo_path)
-        
-        # Ambil 6 digit
-        text = re.sub(r'[^0-9]', '', text)
-        match = re.search(r'(\d{6})', text)
-        
-        if match:
-            code = match.group(1)
-            logger.info(f"✅ OCR success: {code}")
-            return code
-        
-        logger.warning("❌ OCR failed: no 6-digit number found")
-        return None
-        
-    except Exception as e:
-        logger.error(f"❌ OCR error: {e}")
-        return None
 
 # ==================== FUNGSI VALIDASI GOPAY ====================
 
@@ -406,7 +366,10 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios)
     
     for line in lines:
         if any(keyword in line for keyword in ['Moonton', 'Google Play', 'Facebook', 'Tiktok', 'VK', 'Apple', 'GCID', 'Telegram', 'WhatsApp']):
+            # Bersihkan format
             clean_line = line.replace('✧', '•').strip()
+            # Hapus spasi berlebih
+            clean_line = re.sub(r'\s+', ' ', clean_line)
             bind_lines.append(clean_line)
     
     # Gabungkan bind info
@@ -429,11 +392,83 @@ Device Login:
     
     return final
 
+# ==================== OCR ONLINE FUNCTION ====================
+
+async def read_number_from_photo_online(message):
+    """Baca angka 6 digit dari foto captcha menggunakan OCR.space API"""
+    try:
+        if not OCR_SPACE_API_KEY:
+            logger.error("❌ OCR_SPACE_API_KEY tidak tersedia")
+            return None
+        
+        logger.info("📸 OCR Online: Downloading captcha photo...")
+        
+        # Download foto
+        photo_path = await message.download_media()
+        logger.info(f"✅ Photo downloaded: {photo_path}")
+        
+        # Baca file sebagai base64
+        with open(photo_path, 'rb') as f:
+            image_data = base64.b64encode(f.read()).decode('utf-8')
+        
+        # Hapus file setelah dibaca
+        os.remove(photo_path)
+        
+        # OCR.space API endpoint
+        url = 'https://api.ocr.space/parse/image'
+        
+        # Payload untuk API
+        payload = {
+            'base64Image': f'data:image/jpeg;base64,{image_data}',
+            'apikey': OCR_SPACE_API_KEY,
+            'language': 'eng',
+            'OCREngine': '2',
+            'isTable': 'false',
+            'scale': 'true',
+            'detectOrientation': 'true'
+        }
+        
+        logger.info("📤 Sending to OCR.space API...")
+        
+        # Kirim request
+        response = requests.post(url, data=payload, timeout=30)
+        
+        if response.status_code == 200:
+            result = response.json()
+            
+            if result.get('IsErroredOnProcessing') == False:
+                if result.get('ParsedResults') and len(result['ParsedResults']) > 0:
+                    text = result['ParsedResults'][0].get('ParsedText', '')
+                    
+                    # Bersihkan hasil (ambil hanya angka)
+                    text = re.sub(r'[^0-9]', '', text)
+                    logger.info(f"📝 OCR result: '{text}'")
+                    
+                    # Cari 6 digit
+                    match = re.search(r'(\d{6})', text)
+                    if match:
+                        code = match.group(1)
+                        logger.info(f"✅ OCR Online success: {code}")
+                        return code
+                    else:
+                        logger.warning("❌ No 6-digit found in OCR result")
+            else:
+                error = result.get('ErrorMessage', ['Unknown error'])[0]
+                logger.error(f"❌ OCR Error: {error}")
+        else:
+            logger.error(f"❌ API Error: {response.status_code}")
+            
+        return None
+        
+    except Exception as e:
+        logger.error(f"❌ OCR Online error: {e}")
+        return None
+
 # ==================== RETRY PENDING REQUESTS ====================
 
 async def retry_pending_requests():
     """Kirim ulang request yang pending setelah captcha selesai"""
-    logger.info("🔄 Retrying pending requests...")
+    logger.info("🔄 Retrying pending requests immediately...")
     
     retry_count = 0
     while True:
@@ -465,7 +500,7 @@ async def retry_pending_requests():
 @events.register(events.NewMessage)
 async def message_handler(event):
     """
-    Handler untuk semua pesan baru - LANGSUNG KERJA TANPA /start
+    Handler untuk semua pesan baru
     """
     message = event.message
     chat_id = event.chat_id
@@ -493,7 +528,7 @@ async def message_handler(event):
     logger.info("🎯🎯🎯 PESAN DARI BOT A DITERIMA!")
     
     # ===== CEK APAKAH INI HASIL INFO VALID =====
-    if 'BIND ACCOUNT INFO' in text or 'INFORMASI AKUN' in text:
+    if 'BIND ACCOUNT INFO' in text or 'INFORMASI AKUN' in text or '──────────────────────' in text:
         logger.info("✅✅✅ INI HASIL INFO VALID! FORWARDING KE USER...")
         
         # Ambil request dari queue
@@ -545,6 +580,10 @@ async def message_handler(event):
                 if response.status_code == 200:
                     logger.info(f"✅✅✅ TERKIRIM KE USER {user_id}!")
                     r.delete(request_id)
+                    
+                    # Reset state
+                    if user_id in waiting_for_result:
+                        waiting_for_result[user_id] = False
                 else:
                     logger.error(f"❌ Gagal forward: {response.status_code}")
                     r.rpush('pending_requests', request_id)
@@ -564,9 +603,9 @@ async def message_handler(event):
         return
     
     # ===== CEK APAKAH INI PESAN RATE LIMIT =====
-    if 'please wait' in text.lower():
-        logger.warning("⏳ RATE LIMIT DARI BOT A! Menunggu 30 detik...")
-        await asyncio.sleep(30)
+    if 'please wait' in text.lower() or 'rate limit' in text.lower():
+        logger.warning("⏳ RATE LIMIT DARI BOT A! Menunggu 60 detik...")
+        await asyncio.sleep(60)
         logger.info("✅ Selesai menunggu rate limit")
         logger.info("=" * 80)
         return
@@ -577,7 +616,7 @@ async def message_handler(event):
     
     # Cek 1: Ada foto (captcha)
     if message.photo:
-        logger.info("📸 PHOTO DETECTED - Captcha")
+        logger.info("📸 PHOTO DETECTED - This is a captcha")
         is_captcha = True
         
         # SET STATE untuk user yang menunggu
@@ -587,7 +626,7 @@ async def message_handler(event):
             top_req_data = json.loads(r.get(top_req_id))
             waiting_user = top_req_data['chat_id']
             waiting_for_result[waiting_user] = True
-            logger.info(f"📋 Waiting for user {waiting_user}")
+            logger.info(f"📋 Waiting for result SET for user {waiting_user}")
         
         # Cek angka di caption
         if text:
@@ -612,7 +651,7 @@ async def message_handler(event):
                     top_req_data = json.loads(r.get(top_req_id))
                     waiting_user = top_req_data['chat_id']
                     waiting_for_result[waiting_user] = True
-                    logger.info(f"📋 Waiting for user {waiting_user}")
+                    logger.info(f"📋 Waiting for result SET for user {waiting_user}")
     
     # ===== JIKA CAPTCHA =====
     if is_captcha:
@@ -620,8 +659,8 @@ async def message_handler(event):
         
         # Jika captcha_code belum ada, pakai OCR
         if not captcha_code and message.photo:
-            logger.info("🔍 Mencoba OCR...")
-            captcha_code = await read_captcha_from_photo(message)
+            logger.info("🔍 No text code, trying OCR...")
+            captcha_code = await read_number_from_photo_online(message)
         
         if captcha_code and len(captcha_code) == 6:
             logger.info(f"✅✅✅ CAPTCHA CODE: {captcha_code}")
@@ -632,7 +671,6 @@ async def message_handler(event):
             
             await asyncio.sleep(2)
             bot_status['in_captcha'] = False
-            logger.info("✅ Captcha verified")
             
             await retry_pending_requests()
         else:
@@ -648,13 +686,11 @@ async def message_handler(event):
 
 @events.register(events.MessageEdited)
 async def message_edit_handler(event):
-    """Handler untuk pesan yang diedit"""
     logger.info(f"✏️ Message edited in chat {event.chat_id}")
 
 # ==================== QUEUE PROCESSOR ====================
 
 async def process_queue():
-    """Monitor queue dan kirim request ke Bot A"""
     logger.info("🔄 Queue processor started")
     
     while True:
@@ -688,7 +724,7 @@ async def process_queue():
                     
                     try:
                         await client.send_message(BOT_A_CHAT_ID, cmd)
-                        logger.info(f"📤 Sent to Bot A: {cmd} for user {request_data['chat_id']}")
+                        logger.info(f"📤 Sent to Bot A: {cmd}")
                         sent_requests[request_id] = current_time
                     except Exception as e:
                         logger.error(f"❌ Failed to send to Bot A: {e}")
@@ -704,7 +740,7 @@ async def main():
     sent_requests = {}
     waiting_for_result = {}
     
-    logger.info("🚀 Starting Telethon userbot (fresh start)...")
+    logger.info("🚀 Starting Telethon userbot...")
     
     try:
         await client.start()
@@ -712,8 +748,6 @@ async def main():
         
         me = await client.get_me()
         logger.info(f"✅ Logged in as: {me.first_name} (@{me.username})")
-        
-        # TANPA MENGIRIM /start KE BOT A - LANGSUNG KERJA
         
         client.add_event_handler(message_handler)
         client.add_event_handler(message_edit_handler)
