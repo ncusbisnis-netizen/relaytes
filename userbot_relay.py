@@ -27,254 +27,13 @@ BOT_A_CHAT_ID = int(os.environ.get('BOT_A_CHAT_ID', 0))
 REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
 OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', '')
 
-# Country mapping (5 negara)
+# Country mapping (5 negara) - sama seperti countryMappingMg di JS
 country_mapping = {
-    'AF': '🇦🇫 Afghanistan',
-  'AX': '🇦🇽 Åland Islands',
-  'AL': '🇦🇱 Albania',
-  'DZ': '🇩🇿 Algeria',
-  'AS': '🇦🇸 American Samoa',
-  'AD': '🇦🇩 Andorra',
-  'AO': '🇦🇴 Angola',
-  'AI': '🇦🇮 Anguilla',
-  'AQ': '🇦🇶 Antarctica',
-  'AG': '🇦🇬 Antigua and Barbuda',
-  'AR': '🇦🇷 Argentina',
-  'AM': '🇦🇲 Armenia',
-  'AW': '🇦🇼 Aruba',
-  'AU': '🇦🇺 Australia',
-  'AT': '🇦🇹 Austria',
-  'AZ': '🇦🇿 Azerbaijan',
-  'BS': '🇧🇸 Bahamas',
-  'BH': '🇧🇭 Bahrain',
-  'BD': '🇧🇩 Bangladesh',
-  'BB': '🇧🇧 Barbados',
-  'BY': '🇧🇾 Belarus',
-  'BE': '🇧🇪 Belgium',
-  'BZ': '🇧🇿 Belize',
-  'BJ': '🇧🇯 Benin',
-  'BM': '🇧🇲 Bermuda',
-  'BT': '🇧🇹 Bhutan',
-  'BO': '🇧🇴 Bolivia, Plurinational State of bolivia',
-  'BA': '🇧🇦 Bosnia and Herzegovina',
-  'BW': '🇧🇼 Botswana',
-  'BV': '🇧🇻 Bouvet Island',
-  'BR': '🇧🇷 Brazil',
-  'IO': '🇮🇴 British Indian Ocean Territory',
-  'BN': '🇧🇳 Brunei Darussalam',
-  'BG': '🇧🇬 Bulgaria',
-  'BF': '🇧🇫 Burkina Faso',
-  'BI': '🇧🇮 Burundi',
-  'KH': '🇰🇭 Cambodia',
-  'CM': '🇨🇲 Cameroon',
-  'CA': '🇨🇦 Canada',
-  'CV': '🇨🇻 Cape Verde',
-  'KY': '🇰🇾 Cayman Islands',
-  'CF': '🇨🇫 Central African Republic',
-  'TD': '🇹🇩 Chad',
-  'CL': '🇨🇱 Chile',
-  'CN': '🇨🇳 China',
-  'CX': '🇨🇽 Christmas Island',
-  'CC': '🇨🇨 Cocos (Keeling) Islands',
-  'CO': '🇨🇴 Colombia',
-  'KM': '🇰🇲 Comoros',
-  'CG': '🇨🇬 Congo',
-  'CD': '🇨🇩 Congo, The Democratic Republic of the Congo',
-  'CK': '🇨🇰 Cook Islands',
-  'CR': '🇨🇷 Costa Rica',
-  'CI': "🇨🇮 Cote d'Ivoire",
-  'HR': '🇭🇷 Croatia',
-  'CU': '🇨🇺 Cuba',
-  'CY': '🇨🇾 Cyprus',
-  'CZ': '🇨🇿 Czech Republic',
-  'DK': '🇩🇰 Denmark',
-  'DJ': '🇩🇯 Djibouti',
-  'DM': '🇩🇲 Dominica',
-  'DO': '🇩🇴 Dominican Republic',
-  'EC': '🇪🇨 Ecuador',
-  'EG': '🇪🇬 Egypt',
-  'SV': '🇸🇻 El Salvador',
-  'GQ': '🇬🇶 Equatorial Guinea',
-  'ER': '🇪🇷 Eritrea',
-  'EE': '🇪🇪 Estonia',
-  'ET': '🇪🇹 Ethiopia',
-  'FK': '🇫🇰 Falkland Islands (Malvinas)',
-  'FO': '🇫🇴 Faroe Islands',
-  'FJ': '🇫🇯 Fiji',
-  'FI': '🇫🇮 Finland',
-  'FR': '🇫🇷 France',
-  'GF': '🇬🇫 French Guiana',
-  'PF': '🇵🇫 French Polynesia',
-  'TF': '🇹🇫 French Southern Territories',
-  'GA': '🇬🇦 Gabon',
-  'GM': '🇬🇲 Gambia',
-  'GE': '🇬🇪 Georgia',
-  'DE': '🇩🇪 Germany',
-  'GH': '🇬🇭 Ghana',
-  'GI': '🇬🇮 Gibraltar',
-  'GR': '🇬🇷 Greece',
-  'GL': '🇬🇱 Greenland',
-  'GD': '🇬🇩 Grenada',
-  'GP': '🇬🇵 Guadeloupe',
-  'GU': '🇬🇺 Guam',
-  'GT': '🇬🇹 Guatemala',
-  'GG': '🇬🇬 Guernsey',
-  'GN': '🇬🇳 Guinea',
-  'GW': '🇬🇼 Guinea-Bissau',
-  'GY': '🇬🇾 Guyana',
-  'HT': '🇭🇹 Haiti',
-  'HM': '🇭🇲 Heard Island and Mcdonald Islands',
-  'VA': '🇻🇦 Holy See (Vatican City State)',
-  'HN': '🇭🇳 Honduras',
-  'HK': '🇭🇰 Hong Kong',
-  'HU': '🇭🇺 Hungary',
-  'IS': '🇮🇸 Iceland',
-  'IN': '🇮🇳 India',
-  'ID': '🇮🇩 Indonesia',
-  'IR': '🇮🇷 Iran, Islamic Republic of Persian Gulf',
-  'IQ': '🇮🇶 Iraq',
-  'IE': '🇮🇪 Ireland',
-  'IM': '🇮🇲 Isle of Man',
-  'IL': '🇮🇱 Israel',
-  'IT': '🇮🇹 Italy',
-  'JM': '🇯🇲 Jamaica',
-  'JP': '🇯🇵 Japan',
-  'JE': '🇯🇪 Jersey',
-  'JO': '🇯🇴 Jordan',
-  'KZ': '🇰🇿 Kazakhstan',
-  'KE': '🇰🇪 Kenya',
-  'KI': '🇰🇮 Kiribati',
-  'KP': "🇰🇵 Korea, Democratic People's Republic of Korea",
-  'KR': '🇰🇷 Korea, Republic of South Korea',
-  'XK': '🇽🇰 Kosovo',
-  'KW': '🇰🇼 Kuwait',
-  'KG': '🇰🇬 Kyrgyzstan',
-  'LA': '🇱🇦 Laos',
-  'LV': '🇱🇻 Latvia',
-  'LB': '🇱🇧 Lebanon',
-  'LS': '🇱🇸 Lesotho',
-  'LR': '🇱🇷 Liberia',
-  'LY': '🇱🇾 Libyan Arab Jamahiriya',
-  'LI': '🇱🇮 Liechtenstein',
-  'LT': '🇱🇹 Lithuania',
-  'LU': '🇱🇺 Luxembourg',
-  'MO': '🇲🇴 Macao',
-  'MK': '🇲🇰 Macedonia',
-  'MG': '🇲🇬 Madagascar',
-  'MW': '🇲🇼 Malawi',
-  'MY': '🇲🇾 Malaysia',
-  'MV': '🇲🇻 Maldives',
-  'ML': '🇲🇱 Mali',
-  'MT': '🇲🇹 Malta',
-  'MH': '🇲🇭 Marshall Islands',
-  'MQ': '🇲🇶 Martinique',
-  'MR': '🇲🇷 Mauritania',
-  'MU': '🇲🇺 Mauritius',
-  'YT': '🇾🇹 Mayotte',
-  'MX': '🇲🇽 Mexico',
-  'FM': '🇫🇲 Micronesia, Federated States of Micronesia',
-  'MD': '🇲🇩 Moldova',
-  'MC': '🇲🇨 Monaco',
-  'MN': '🇲🇳 Mongolia',
-  'ME': '🇲🇪 Montenegro',
-  'MS': '🇲🇸 Montserrat',
-  'MA': '🇲🇦 Morocco',
-  'MZ': '🇲🇿 Mozambique',
-  'MM': '🇲🇲 Myanmar',
-  'NA': '🇳🇦 Namibia',
-  'NR': '🇳🇷 Nauru',
-  'NP': '🇳🇵 Nepal',
-  'NL': '🇳🇱 Netherlands',
-  'AN': 'Netherlands Antilles',
-  'NC': '🇳🇨 New Caledonia',
-  'NZ': '🇳🇿 New Zealand',
-  'NI': '🇳🇮 Nicaragua',
-  'NE': '🇳🇪 Niger',
-  'NG': '🇳🇬 Nigeria',
-  'NU': '🇳🇺 Niue',
-  'NF': '🇳🇫 Norfolk Island',
-  'MP': '🇲🇵 Northern Mariana Islands',
-  'NO': '🇳🇴 Norway',
-  'OM': '🇴🇲 Oman',
-  'PK': '🇵🇰 Pakistan',
-  'PW': '🇵🇼 Palau',
-  'PS': '🇵🇸 Palestinian Territory, Occupied',
-  'PA': '🇵🇦 Panama',
-  'PG': '🇵🇬 Papua New Guinea',
-  'PY': '🇵🇾 Paraguay',
-  'PE': '🇵🇪 Peru',
-  'PH': '🇵🇭 Philippines',
-  'PN': '🇵🇳 Pitcairn',
-  'PL': '🇵🇱 Poland',
-  'PT': '🇵🇹 Portugal',
-  'PR': '🇵🇷 Puerto Rico',
-  'QA': '🇶🇦 Qatar',
-  'RO': '🇷🇴 Romania',
-  'RU': '🇷🇺 Russia',
-  'RW': '🇷🇼 Rwanda',
-  'RE': '🇷🇪 Reunion',
-  'BL': '🇧🇱 Saint Barthelemy',
-  'SH': '🇸🇭 Saint Helena, Ascension and Tristan Da Cunha',
-  'KN': '🇰🇳 Saint Kitts and Nevis',
-  'LC': '🇱🇨 Saint Lucia',
-  'MF': '🇲🇫 Saint Martin',
-  'PM': '🇵🇲 Saint Pierre and Miquelon',
-  'VC': '🇻🇨 Saint Vincent and the Grenadines',
-  'WS': '🇼🇸 Samoa',
-  'SM': '🇸🇲 San Marino',
-  'ST': '🇸🇹 Sao Tome and Principe',
-  'SA': '🇸🇦 Saudi Arabia',
-  'SN': '🇸🇳 Senegal',
-  'RS': '🇷🇸 Serbia',
-  'SC': '🇸🇨 Seychelles',
-  'SL': '🇸🇱 Sierra Leone',
-  'SG': '🇸🇬 Singapore',
-  'SK': '🇸🇰 Slovakia',
-  'SI': '🇸🇮 Slovenia',
-  'SB': '🇸🇧 Solomon Islands',
-  'SO': '🇸🇴 Somalia',
-  'ZA': '🇿🇦 South Africa',
-  'SS': '🇸🇸 South Sudan',
-  'GS': '🇬🇸 South Georgia and the South Sandwich Islands',
-  'ES': '🇪🇸 Spain',
-  'LK': '🇱🇰 Sri Lanka',
-  'SD': '🇸🇩 Sudan',
-  'SR': '🇸🇷 Suriname',
-  'SJ': '🇸🇯 Svalbard and Jan Mayen',
-  'SZ': '🇸🇿 Eswatini',
-  'SE': '🇸🇪 Sweden',
-  'CH': '🇨🇭 Switzerland',
-  'SY': '🇸🇾 Syrian Arab Republic',
-  'TW': '🇹🇼 Taiwan',
-  'TJ': '🇹🇯 Tajikistan',
-  'TZ': '🇹🇿 Tanzania, United Republic of Tanzania',
-  'TH': '🇹🇭 Thailand',
-  'TL': '🇹🇱 Timor-Leste',
-  'TG': '🇹🇬 Togo',
-  'TK': '🇹🇰 Tokelau',
-  'TO': '🇹🇴 Tonga',
-  'TT': '🇹🇹 Trinidad and Tobago',
-  'TN': '🇹🇳 Tunisia',
-  'TR': '🇹🇷 Turkey',
-  'TM': '🇹🇲 Turkmenistan',
-  'TC': '🇹🇨 Turks and Caicos Islands',
-  'TV': '🇹🇻 Tuvalu',
-  'UG': '🇺🇬 Uganda',
-  'UA': '🇺🇦 Ukraine',
-  'AE': '🇦🇪 United Arab Emirates',
-  'GB': '🇬🇧 United Kingdom',
-  'US': '🇺🇸 United States',
-  'UY': '🇺🇾 Uruguay',
-  'UZ': '🇺🇿 Uzbekistan',
-  'VU': '🇻🇺 Vanuatu',
-  'VE': '🇻🇪 Venezuela, Bolivarian Republic of Venezuela',
-  'VN': '🇻🇳 Vietnam',
-  'VG': '🇻🇬 Virgin Islands, British',
-  'VI': '🇻🇮 Virgin Islands, U.S.',
-  'WF': '🇼🇫 Wallis and Futuna',
-  'YE': '🇾🇪 Yemen',
-  'ZM': '🇿🇲 Zambia',
-  'ZW': '🇿🇼 Zimbabwe'
+    'ID': '🇮🇩 Indonesia',
+    'MY': '🇲🇾 Malaysia',
+    'SG': '🇸🇬 Singapore',
+    'PH': '🇵🇭 Philippines',
+    'TH': '🇹🇭 Thailand'
 }
 
 # Validasi environment
@@ -301,74 +60,97 @@ bot_status = {'in_captcha': False}
 sent_requests = {}
 waiting_for_result = {}
 
-# ==================== FUNGSI VALIDASI GOPAY (VERSI REQUESTS) ====================
+# ==================== FUNGSI VALIDASI GOPAY (PERSIS SEPERTI JAVASCRIPT) ====================
 
 def validate_mlbb_gopay_sync(user_id, server_id):
-    """Validasi akun MLBB menggunakan API GoPay (sync version)"""
+    """Validasi akun MLBB menggunakan API GoPay - PERSIS seperti versi JavaScript"""
     url = 'https://gopay.co.id/games/v1/order/user-account'
+    
+    # Headers PERSIS seperti JS
     headers = {
         'Content-Type': 'application/json',
         'X-Client': 'web-mobile',
-        'X-Timestamp': str(int(time.time() * 1000)),
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36',
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'id-ID,id;q=0.9,en;q=0.8',
-        'Origin': 'https://gopay.co.id',
-        'Referer': 'https://gopay.co.id/games',
-        'Connection': 'keep-alive'
+        'X-Timestamp': str(int(time.time() * 1000)),  # Date.now() dalam milidetik
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36'
     }
     
-    body = {
+    # Body PERSIS seperti JS
+    body = json.dumps({
         "code": "MOBILE_LEGENDS",
         "data": {
             "userId": str(user_id),
             "zoneId": str(server_id)
         }
-    }
+    })
     
     try:
         logger.info(f"📤 GoPay API Request: {user_id}:{server_id}")
         
-        response = requests.post(url, headers=headers, json=body, timeout=10)
-        logger.info(f"📥 GoPay API Response status: {response.status_code}")
+        # Fetch PERSIS seperti JS
+        response = requests.post(url, headers=headers, data=body, timeout=10)
         
+        # .then(res => res.json()) PERSIS seperti JS
         if response.status_code == 200:
             result = response.json()
-            logger.info(f"📥 GoPay API Response: {json.dumps(result)[:200]}")
+            logger.info(f"📥 GoPay Response: {json.dumps(result)[:200]}")
             
-            if result.get('data'):
-                data = result['data']
-                username = data.get('username', 'Unknown')
+            # if (response && response.data) PERSIS seperti JS
+            if result and result.get('data'):
+                v = result['data']  # let v = response.data
                 
-                # Ubah + menjadi spasi
-                username = username.replace('+', ' ')
+                # Dapatkan region dari mapping (sama seperti countryMappingMg[v.countryOrigin.toUpperCase()])
+                country = v.get('countryOrigin', '').upper()
+                region = country_mapping.get(country, country)
                 
-                region_code = data.get('countryOrigin', 'ID').upper()
-                region_flag = country_mapping.get(region_code, f'🌍 {region_code}')
+                # Username (bisa mengandung + yang perlu diganti spasi)
+                username = v.get('username', 'Unknown')
+                username = username.replace('+', ' ')  # Ubah + menjadi spasi
                 
-                logger.info(f"✅ GoPay success: {username} - {region_flag}")
+                logger.info(f"✅ GoPay success: {username} - {region}")
                 
+                # Return PERSIS seperti JS
                 return {
-                    'success': True,
-                    'nickname': username,
-                    'region': region_flag
+                    'status': True,
+                    'creator': 'AntiDEV',
+                    'result': {
+                        'userId': user_id,
+                        'serverId': server_id,
+                        'username': username,
+                        'region': region
+                    }
                 }
             else:
                 logger.warning(f"⚠️ GoPay response no data: {result}")
-        else:
-            logger.error(f"❌ GoPay API error status: {response.status_code}")
-            if response.text:
-                logger.error(f"❌ Response text: {response.text[:200]}")
-                
+        
+        # Else case PERSIS seperti JS
+        logger.warning(f"⚠️ GoPay response invalid: {response.status_code}")
+        return {
+            'status': False,
+            'creator': 'AntiDEV',
+            'message': 'Invalid UserId or ServerId'
+        }
+        
+    except requests.exceptions.Timeout:
+        logger.error("❌ GoPay API timeout")
+        return {
+            'status': False,
+            'creator': 'AntiDEV',
+            'message': 'Request timeout'
+        }
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"❌ GoPay API connection error: {e}")
+        return {
+            'status': False,
+            'creator': 'AntiDEV',
+            'message': 'Connection error'
+        }
     except Exception as e:
-        logger.error(f"❌ GoPay API exception: {e}")
-    
-    # Return default jika gagal
-    return {
-        'success': False,
-        'nickname': 'Tidak diketahui',
-        'region': '🌍 Tidak diketahui'
-    }
+        logger.error(f"❌ GoPay API unexpected error: {e}")
+        return {
+            'status': False,
+            'creator': 'AntiDEV',
+            'message': str(e)
+        }
 
 # ==================== OCR ONLINE FUNCTION ====================
 
@@ -574,10 +356,17 @@ async def message_handler(event):
             android = android_match.group(1) if android_match else '0'
             ios = ios_match.group(1) if ios_match else '0'
             
-            # Panggil API GoPay (sync version)
+            # Panggil API GoPay (versi baru persis JS)
             gopay_result = validate_mlbb_gopay_sync(uid, sid)
-            nickname = gopay_result['nickname']
-            region = gopay_result['region']
+            
+            if gopay_result['status']:
+                nickname = gopay_result['result']['username']
+                region = gopay_result['result']['region']
+                logger.info(f"✅ GoPay: {nickname} - {region}")
+            else:
+                nickname = 'Tidak diketahui'
+                region = '🌍 Tidak diketahui'
+                logger.warning(f"⚠️ GoPay: {gopay_result['message']}")
             
             # Format output final
             final_output = format_final_output(text, nickname, region, uid, sid, android, ios)
