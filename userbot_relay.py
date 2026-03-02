@@ -215,7 +215,14 @@ async def handle_bot_reply(client, message: Message):
             request_id = r.lpop('pending_requests')
             if request_id:
                 request_id = request_id.decode('utf-8')
-                request_data = json.loads(r.get(request_id))
+                request_data_json = r.get(request_id)
+                
+                # CEK APAKAH DATA MASIH ADA (TIDAK EXPIRED)
+                if request_data_json is None:
+                    logger.warning(f"⚠️ Request {request_id} sudah expired, dilewati")
+                    return
+                
+                request_data = json.loads(request_data_json)
                 
                 # Kirim ke user via Bot B
                 url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
@@ -246,7 +253,14 @@ async def retry_pending_requests():
             break
             
         request_id = request_id.decode('utf-8')
-        request_data = json.loads(r.get(request_id))
+        request_data_json = r.get(request_id)
+        
+        # CEK APAKAH DATA MASIH ADA
+        if request_data_json is None:
+            logger.warning(f"⚠️ Request {request_id} sudah expired, dilewati")
+            continue
+        
+        request_data = json.loads(request_data_json)
         
         cmd = f"{request_data['command']} {request_data['args'][0]} {request_data['args'][1]}"
         await app.send_message(BOT_A_CHAT_ID, cmd)
@@ -272,7 +286,14 @@ async def process_queue():
                 request_id = r.lpop('pending_requests')
                 if request_id:
                     request_id = request_id.decode('utf-8')
-                    request_data = json.loads(r.get(request_id))
+                    request_data_json = r.get(request_id)
+                    
+                    # CEK APAKAH DATA MASIH ADA (TIDAK EXPIRED)
+                    if request_data_json is None:
+                        logger.warning(f"⚠️ Request {request_id} sudah expired, dilewati")
+                        continue
+                    
+                    request_data = json.loads(request_data_json)
                     
                     cmd = f"{request_data['command']} {request_data['args'][0]} {request_data['args'][1]}"
                     await app.send_message(BOT_A_CHAT_ID, cmd)
