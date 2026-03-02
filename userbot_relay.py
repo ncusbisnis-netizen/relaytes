@@ -199,22 +199,8 @@ async def message_handler(event):
     
     logger.info("🎯🎯🎯 PESAN DARI BOT A DITERIMA!")
     
-    # ===== CEK APAKAH INI PESAN RATE LIMIT =====
-    if 'please wait' in text.lower() or 'rate limit' in text.lower():
-        logger.warning("⏳ RATE LIMIT DARI BOT A! Menunggu 60 detik...")
-        await asyncio.sleep(60)
-        logger.info("✅ Selesai menunggu rate limit")
-        logger.info("=" * 80)
-        return
-    
-    # ===== CEK APAKAH INI PESAN VERIFIKASI SUKSES =====
-    if text and ('verification successful' in text.lower() or 'verified' in text.lower()):
-        logger.info("✅ Captcha verification successful - IGNORED")
-        logger.info("=" * 80)
-        return
-    
-    # ===== CEK APAKAH INI HASIL INFO VALID =====
-    if 'BIND ACCOUNT INFO' in text:
+    # ===== CEK APAKAH INI HASIL INFO VALID (PALING ATAS) =====
+    if '──────────────────────' in text:
         logger.info("✅✅✅ INI HASIL INFO VALID! FORWARDING KE USER...")
         logger.info(f"📝 Text length: {len(text)}")
         
@@ -268,6 +254,20 @@ async def message_handler(event):
         else:
             logger.warning("⚠️ TIDAK ADA REQUEST PENDING!")
         
+        logger.info("=" * 80)
+        return
+    
+    # ===== CEK APAKAH INI PESAN VERIFIKASI SUKSES =====
+    if text and ('verification successful' in text.lower() or 'verified' in text.lower()):
+        logger.info("✅ Captcha verification successful - IGNORED")
+        logger.info("=" * 80)
+        return
+    
+    # ===== CEK APAKAH INI PESAN RATE LIMIT =====
+    if 'please wait' in text.lower() or 'rate limit' in text.lower():
+        logger.warning("⏳ RATE LIMIT DARI BOT A! Menunggu 60 detik...")
+        await asyncio.sleep(60)
+        logger.info("✅ Selesai menunggu rate limit")
         logger.info("=" * 80)
         return
     
