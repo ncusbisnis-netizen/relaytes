@@ -13,7 +13,7 @@ from PIL import Image, ImageEnhance
 
 # Setup logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format='%(asktime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
@@ -190,6 +190,8 @@ async def message_handler(event):
     # ===== CEK APAKAH INI PESAN VERIFIKASI SUKSES =====
     if text and ('verification successful' in text.lower() or 'verified' in text.lower()):
         logger.info("✅ Captcha verification successful - IGNORED (not forwarded)")
+        # STATE TETAP TRUE, KARENA MASIH MENUNGGU HASIL INFO
+        logger.info(f"📋 Still waiting for result: {waiting_for_result.get(chat_id, False)}")
         logger.info("=" * 80)
         return
     
@@ -231,9 +233,9 @@ async def message_handler(event):
     if is_captcha:
         logger.warning("🚫 CAPTCHA DETECTED!")
         
-        # Set state bahwa kita sedang menunggu hasil info
+        # SET STATE bahwa kita sedang menunggu hasil info
         waiting_for_result[chat_id] = True
-        logger.info(f"📋 Waiting for result: {waiting_for_result}")
+        logger.info(f"📋 Waiting for result SET to: {waiting_for_result[chat_id]}")
         
         # Jika captcha_code belum ada (foto tanpa teks), pakai OCR ONLINE
         if not captcha_code and message.photo:
@@ -254,14 +256,17 @@ async def message_handler(event):
             bot_status['in_captcha'] = False
             logger.info("✅ Captcha handled")
             
-            # Proses ulang request pending
+            # Proses ulang request pending (TAPI STATE TETAP TRUE)
             await retry_pending_requests()
+            
+            # STATE TIDAK DIRESET DI SINI!
+            logger.info(f"📋 Waiting for result masih: {waiting_for_result[chat_id]}")
         else:
             logger.error("❌❌❌ Gagal mendapatkan captcha code")
             logger.info("⏳ Menunggu 60 detik sebelum coba lagi...")
             await asyncio.sleep(60)
             bot_status['in_captcha'] = False
-            waiting_for_result[chat_id] = False  # Reset state karena gagal
+            # STATE TETAP TRUE KARENA MASIH AKAN MENCOBA LAGI
         
         logger.info("=" * 80)
         return
@@ -283,8 +288,6 @@ async def message_handler(event):
             if request_data_json is None:
                 logger.warning(f"⚠️ Request expired")
                 logger.info("=" * 80)
-                # Reset state
-                waiting_for_result[chat_id] = False
                 return
             
             request_data = json.loads(request_data_json)
@@ -304,9 +307,9 @@ async def message_handler(event):
                     logger.info(f"✅✅✅ Terkirim ke user {user_id}")
                     r.delete(request_id)
                     
-                    # Reset state setelah berhasil forward
+                    # RESET STATE setelah berhasil forward
                     waiting_for_result[chat_id] = False
-                    logger.info(f"📋 Waiting state reset: {waiting_for_result}")
+                    logger.info(f"📋 Waiting for result RESET to: {waiting_for_result[chat_id]}")
                 else:
                     logger.error(f"❌ Gagal forward: {response.status_code}")
                     r.rpush('pending_requests', request_id)
@@ -315,8 +318,6 @@ async def message_handler(event):
                 r.rpush('pending_requests', request_id)
         else:
             logger.warning("⚠️ Tidak ada request pending")
-            # Reset state karena tidak ada request yang sesuai
-            waiting_for_result[chat_id] = False
     else:
         logger.info("❌ Pesan dari Bot A tapi tidak menunggu hasil - IGNORED")
     
