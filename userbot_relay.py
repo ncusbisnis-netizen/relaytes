@@ -8,9 +8,12 @@ import re
 import logging
 import json
 import requests
-from PIL import Image, ImageEnhance
 import pytesseract
-import io
+from PIL import Image, ImageEnhance
+
+# Set path Tesseract untuk Heroku (WAJIB!)
+pytesseract.pytesseract.tesseract_cmd = '/app/.apt/usr/bin/tesseract'
+os.environ['TESSDATA_PREFIX'] = '/app/.apt/usr/share/tesseract-ocr/5/tessdata/'
 
 # Setup logging
 logging.basicConfig(
@@ -27,13 +30,15 @@ BOT_B_TOKEN = os.environ.get('BOT_B_TOKEN', '')
 BOT_A_CHAT_ID = int(os.environ.get('BOT_A_CHAT_ID', 0))
 REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
 
-# Set Tesseract path untuk Heroku
-pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
-os.environ['TESSDATA_PREFIX'] = '/usr/share/tesseract-ocr/5/tessdata/'
-
 # Validasi environment
 if not all([API_ID, API_HASH, SESSION_STRING, BOT_B_TOKEN, BOT_A_CHAT_ID, REDIS_URL]):
     logger.error("❌ Missing required environment variables!")
+    logger.error(f"API_ID: {'✅' if API_ID else '❌'}")
+    logger.error(f"API_HASH: {'✅' if API_HASH else '❌'}")
+    logger.error(f"SESSION_STRING: {'✅' if SESSION_STRING else '❌'}")
+    logger.error(f"BOT_B_TOKEN: {'✅' if BOT_B_TOKEN else '❌'}")
+    logger.error(f"BOT_A_CHAT_ID: {'✅' if BOT_A_CHAT_ID else '❌'}")
+    logger.error(f"REDIS_URL: {'✅' if REDIS_URL else '❌'}")
     exit(1)
 
 # Redis connection
@@ -72,7 +77,7 @@ async def read_number_from_photo(message):
         enhancer = ImageEnhance.Contrast(img)
         img = enhancer.enhance(2.0)
         
-        # Threshold
+        # Threshold untuk angka putih
         img = img.point(lambda p: p > 200 and 255)
         
         # Simpan sementara
