@@ -174,23 +174,75 @@ def notify_admin(message):
 async def handle_bot_reply(client, message: Message):
     text = message.text or message.caption or ''
     
-    logger.info(f"📩 From Bot A: {text[:100]}")
+    # LOG LENGKAP UNTUK DEBUG
+    logger.info(f"🔥 Handler triggered - Chat ID: {message.chat.id}")
+    logger.info(f"📸 Has photo: {bool(message.photo)}")
+    logger.info(f"📝 Text length: {len(text)}")
+    logger.info(f"📝 Text preview: {text[:200]}")
     
-    # CEK CAPTCHA (foto + kata kunci)
-    if message.photo and ('captcha' in text.lower() or 'verify' in text.lower()):
-        logger.warning("🚫 CAPTCHA DETECTED!")
+    # CEK APAKAH INI CAPTCHA (BERDASARKAN SCREENSHOT ASLI)
+    is_captcha = False
+    captcha_code = None
+    
+    # KONDISI 1: Ada foto dan ada teks
+    if message.photo and text:
+        # Cek apakah teks mengandung angka 6 digit
+        has_6digit = bool(re.search(r'\d{6}', text))
+        
+        # Cek apakah ada kata kunci captcha/verify
+        has_keyword = 'captcha' in text.lower() or 'verify' in text.lower()
+        
+        if has_6digit or has_keyword:
+            is_captcha = True
+            logger.info(f"🚨 CAPTCHA TERDETEKSI! (6 digit: {has_6digit}, keyword: {has_keyword})")
+            
+            # Ambil 6 digit dari teks sebagai cadangan
+            match = re.search(r'(\d{6})', text)
+            if match:
+                captcha_code = match.group(1)
+                logger.info(f"📝 Captcha code dari teks: {captcha_code}")
+    
+    # KONDISI 2: Hanya foto (tanpa teks) - ini juga captcha
+    elif message.photo and not text:
+        is_captcha = True
+        logger.info("🚨 CAPTCHA TERDETEKSI! (foto tanpa teks)")
+    
+    # KONDISI 3: Teks berisi 6 digit angka (mungkin tanpa foto)
+    elif text and re.search(r'^\s*\d{6}\s*$', text):
+        is_captcha = True
+        captcha_code = text.strip()
+        logger.info(f"🚨 CAPTCHA TERDETEKSI! (hanya 6 digit angka): {captcha_code}")
+    
+    # CEK CAPTCHA
+    if is_captcha:
+        logger.warning("🚫 CAPTCHA DETECTED! Memulai proses...")
         bot_status['in_captcha'] = True
         
         notify_admin("🚫 Captcha detected, solving...")
         
-        # SOLVE CAPTCHA DENGAN OCR
-        code = await solve_captcha(message)
+        # SOLVE CAPTCHA
+        code = None
+        
+        if message.photo:
+            # Jika ada foto, prioritaskan OCR
+            logger.info("🔍 Menggunakan OCR untuk membaca captcha...")
+            code = await solve_captcha(message)
+            
+            # Jika OCR gagal, gunakan kode dari teks (jika ada)
+            if not code and captcha_code:
+                code = captcha_code
+                logger.info(f"✅ Menggunakan kode dari teks: {code}")
+        else:
+            # Jika tidak ada foto, gunakan kode dari teks
+            code = captcha_code
+            logger.info(f"✅ Menggunakan kode dari teks: {code}")
         
         if code and len(code) == 6:
             logger.info(f"✅ Captcha solved: {code}")
             
             # Kirim verifikasi ke Bot A
             await client.send_message(BOT_A_CHAT_ID, f"/verify {code}")
+            logger.info(f"📤 Verifikasi dikirim: /verify {code}")
             
             # Tunggu sebentar
             await asyncio.sleep(3)
@@ -208,7 +260,7 @@ async def handle_bot_reply(client, message: Message):
         
         return
     
-    # FORWARD KE USER (hasil normal)
+    # FORWARD KE USER (hasil normal) - hanya jika bukan captcha
     if not bot_status['in_captcha'] and not message.photo:
         try:
             # Ambil request dari queue
@@ -243,6 +295,11 @@ async def handle_bot_reply(client, message: Message):
                 logger.debug("No pending requests")
         except Exception as e:
             logger.error(f"❌ Forward error: {e}")
+    
+    # Jika ada foto tapi bukan captcha (mungkin hasil normal dengan foto)
+    elif message.photo and not is_captcha:
+        logger.info("📸 Received photo but not captcha, handling as normal message...")
+        # TODO: Handle foto yang bukan captcha (misal hasil info dengan gambar)
 
 async def retry_pending_requests():
     """Kirim ulang request yang pending setelah captcha selesai"""
