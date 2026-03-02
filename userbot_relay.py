@@ -10,8 +10,6 @@ import json
 import requests
 import base64
 from PIL import Image, ImageEnhance
-import cv2
-import numpy as np
 
 # Setup logging
 logging.basicConfig(
@@ -51,6 +49,7 @@ client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 bot_status = {'in_captcha': False}
 sent_requests = {}
+waiting_for_result = {}  # State untuk tracking apakah sedang menunggu hasil info
 
 # ==================== OCR ONLINE FUNCTION ====================
 
@@ -95,9 +94,6 @@ async def read_number_from_photo_online(message):
         
         if response.status_code == 200:
             result = response.json()
-            
-            # Log response (opsional, bisa di-comment kalau terlalu banyak)
-            # logger.info(f"OCR Response: {result}")
             
             # Cek apakah OCR berhasil
             if result.get('IsErroredOnProcessing') == False:
@@ -191,6 +187,12 @@ async def message_handler(event):
     
     logger.info("🎯🎯🎯 PESAN DARI BOT A DITERIMA!")
     
+    # ===== CEK APAKAH INI PESAN VERIFIKASI SUKSES =====
+    if text and ('verification successful' in text.lower() or 'verified' in text.lower()):
+        logger.info("✅ Captcha verification successful - IGNORED (not forwarded)")
+        logger.info("=" * 80)
+        return
+    
     # ===== CEK CAPTCHA =====
     is_captcha = False
     captcha_code = None
@@ -229,6 +231,10 @@ async def message_handler(event):
     if is_captcha:
         logger.warning("🚫 CAPTCHA DETECTED!")
         
+        # Set state bahwa kita sedang menunggu hasil info
+        waiting_for_result[chat_id] = True
+        logger.info(f"📋 Waiting for result: {waiting_for_result}")
+        
         # Jika captcha_code belum ada (foto tanpa teks), pakai OCR ONLINE
         if not captcha_code and message.photo:
             logger.info("🔍 No text code found, trying OCR online...")
@@ -255,52 +261,64 @@ async def message_handler(event):
             logger.info("⏳ Menunggu 60 detik sebelum coba lagi...")
             await asyncio.sleep(60)
             bot_status['in_captcha'] = False
+            waiting_for_result[chat_id] = False  # Reset state karena gagal
         
         logger.info("=" * 80)
         return
     
-    # ===== BUKAN CAPTCHA - INI HASIL INFO =====
-    # HANYA sampai di sini jika bukan captcha
-    logger.info("📨📨📨 Memproses sebagai hasil info (BUKAN captcha)")
-    
-    # Ambil request dari queue
-    request_id = r.lpop('pending_requests')
-    
-    if request_id:
-        request_id = request_id.decode('utf-8')
-        logger.info(f"📋 Request ID: {request_id}")
+    # ===== BUKAN CAPTCHA - CEK APAKAH INI HASIL INFO =====
+    # Cek apakah kita sedang menunggu hasil
+    if waiting_for_result.get(chat_id, False):
+        logger.info("📨📨📨 Hasil info dari Bot A - FORWARDING TO USER")
         
-        request_data_json = r.get(request_id)
+        # Ambil request dari queue
+        request_id = r.lpop('pending_requests')
         
-        if request_data_json is None:
-            logger.warning(f"⚠️ Request expired")
-            logger.info("=" * 80)
-            return
-        
-        request_data = json.loads(request_data_json)
-        user_id = request_data['chat_id']
-        
-        # Kirim ke user via Bot B
-        url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
-        data = {
-            'chat_id': user_id,
-            'text': text,
-            'parse_mode': 'HTML'
-        }
-        
-        try:
-            response = requests.post(url, json=data, timeout=10)
-            if response.status_code == 200:
-                logger.info(f"✅✅✅ Terkirim ke user {user_id}")
-                r.delete(request_id)
-            else:
-                logger.error(f"❌ Gagal forward: {response.status_code}")
+        if request_id:
+            request_id = request_id.decode('utf-8')
+            logger.info(f"📋 Request ID: {request_id}")
+            
+            request_data_json = r.get(request_id)
+            
+            if request_data_json is None:
+                logger.warning(f"⚠️ Request expired")
+                logger.info("=" * 80)
+                # Reset state
+                waiting_for_result[chat_id] = False
+                return
+            
+            request_data = json.loads(request_data_json)
+            user_id = request_data['chat_id']
+            
+            # Kirim ke user via Bot B
+            url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
+            data = {
+                'chat_id': user_id,
+                'text': text,
+                'parse_mode': 'HTML'
+            }
+            
+            try:
+                response = requests.post(url, json=data, timeout=10)
+                if response.status_code == 200:
+                    logger.info(f"✅✅✅ Terkirim ke user {user_id}")
+                    r.delete(request_id)
+                    
+                    # Reset state setelah berhasil forward
+                    waiting_for_result[chat_id] = False
+                    logger.info(f"📋 Waiting state reset: {waiting_for_result}")
+                else:
+                    logger.error(f"❌ Gagal forward: {response.status_code}")
+                    r.rpush('pending_requests', request_id)
+            except Exception as e:
+                logger.error(f"❌ Forward error: {e}")
                 r.rpush('pending_requests', request_id)
-        except Exception as e:
-            logger.error(f"❌ Forward error: {e}")
-            r.rpush('pending_requests', request_id)
+        else:
+            logger.warning("⚠️ Tidak ada request pending")
+            # Reset state karena tidak ada request yang sesuai
+            waiting_for_result[chat_id] = False
     else:
-        logger.warning("⚠️ Tidak ada request pending")
+        logger.info("❌ Pesan dari Bot A tapi tidak menunggu hasil - IGNORED")
     
     logger.info("=" * 80)
 
@@ -366,8 +384,9 @@ async def process_queue():
 # ==================== MAIN ====================
 
 async def main():
-    global sent_requests
+    global sent_requests, waiting_for_result
     sent_requests = {}
+    waiting_for_result = {}
     
     logger.info("🚀 Starting Telethon userbot...")
     
