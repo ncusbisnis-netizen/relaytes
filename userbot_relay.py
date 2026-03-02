@@ -9,7 +9,6 @@ import logging
 import json
 import requests
 import base64
-import aiohttp
 from PIL import Image, ImageEnhance
 
 # Setup logging
@@ -302,16 +301,21 @@ bot_status = {'in_captcha': False}
 sent_requests = {}
 waiting_for_result = {}
 
-# ==================== FUNGSI VALIDASI GOPAY ====================
+# ==================== FUNGSI VALIDASI GOPAY (VERSI REQUESTS) ====================
 
-async def validate_mlbb_gopay(user_id, server_id):
-    """Validasi akun MLBB menggunakan API GoPay untuk dapat nickname & region"""
+def validate_mlbb_gopay_sync(user_id, server_id):
+    """Validasi akun MLBB menggunakan API GoPay (sync version)"""
     url = 'https://gopay.co.id/games/v1/order/user-account'
     headers = {
         'Content-Type': 'application/json',
         'X-Client': 'web-mobile',
         'X-Timestamp': str(int(time.time() * 1000)),
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'id-ID,id;q=0.9,en;q=0.8',
+        'Origin': 'https://gopay.co.id',
+        'Referer': 'https://gopay.co.id/games',
+        'Connection': 'keep-alive'
     }
     
     body = {
@@ -323,74 +327,48 @@ async def validate_mlbb_gopay(user_id, server_id):
     }
     
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=body) as resp:
-                if resp.status == 200:
-                    result = await resp.json()
-                    if result.get('data'):
-                        data = result['data']
-                        username = data.get('username', 'Unknown')
-                        
-                        # Ubah + menjadi spasi
-                        username = username.replace('+', ' ')
-                        
-                        region_code = data.get('countryOrigin', 'ID').upper()
-                        region_flag = country_mapping.get(region_code, f'🌍 {region_code}')
-                        
-                        return {
-                            'success': True,
-                            'nickname': username,
-                            'region': region_flag
-                        }
+        logger.info(f"📤 GoPay API Request: {user_id}:{server_id}")
+        
+        response = requests.post(url, headers=headers, json=body, timeout=10)
+        logger.info(f"📥 GoPay API Response status: {response.status_code}")
+        
+        if response.status_code == 200:
+            result = response.json()
+            logger.info(f"📥 GoPay API Response: {json.dumps(result)[:200]}")
+            
+            if result.get('data'):
+                data = result['data']
+                username = data.get('username', 'Unknown')
+                
+                # Ubah + menjadi spasi
+                username = username.replace('+', ' ')
+                
+                region_code = data.get('countryOrigin', 'ID').upper()
+                region_flag = country_mapping.get(region_code, f'🌍 {region_code}')
+                
+                logger.info(f"✅ GoPay success: {username} - {region_flag}")
+                
                 return {
-                    'success': False,
-                    'nickname': 'Tidak diketahui',
-                    'region': '🌍 Tidak diketahui'
+                    'success': True,
+                    'nickname': username,
+                    'region': region_flag
                 }
+            else:
+                logger.warning(f"⚠️ GoPay response no data: {result}")
+        else:
+            logger.error(f"❌ GoPay API error status: {response.status_code}")
+            if response.text:
+                logger.error(f"❌ Response text: {response.text[:200]}")
+                
     except Exception as e:
-        logger.error(f"❌ GoPay API error: {e}")
-        return {
-            'success': False,
-            'nickname': 'Error',
-            'region': '🌍 Error'
-        }
-
-# ==================== FUNGSI FORMAT OUTPUT ====================
-
-def format_final_output(original_text, nickname, region, uid, sid, android, ios):
-    """Format output final sesuai permintaan"""
+        logger.error(f"❌ GoPay API exception: {e}")
     
-    # Ekstrak bind info dari text asli
-    bind_lines = []
-    lines = original_text.split('\n')
-    
-    for line in lines:
-        if any(keyword in line for keyword in ['Moonton', 'Google Play', 'Facebook', 'Tiktok', 'VK', 'Apple', 'GCID', 'Telegram', 'WhatsApp']):
-            # Bersihkan format
-            clean_line = line.replace('✧', '•').strip()
-            # Hapus spasi berlebih
-            clean_line = re.sub(r'\s+', ' ', clean_line)
-            bind_lines.append(clean_line)
-    
-    # Gabungkan bind info
-    bind_info = '\n'.join(bind_lines) if bind_lines else '• Data bind tidak tersedia'
-    
-    # Format final
-    final = f"""INFORMASI AKUN
-
-ID: {uid}
-Server: {sid}
-Nickname: {nickname}
-Region: {region}
-
-BIND INFO:
-{bind_info}
-
-Device Login:
-• Android: {android} perangkat
-• iOS: {ios} perangkat"""
-    
-    return final
+    # Return default jika gagal
+    return {
+        'success': False,
+        'nickname': 'Tidak diketahui',
+        'region': '🌍 Tidak diketahui'
+    }
 
 # ==================== OCR ONLINE FUNCTION ====================
 
@@ -464,11 +442,48 @@ async def read_number_from_photo_online(message):
         logger.error(f"❌ OCR Online error: {e}")
         return None
 
+# ==================== FUNGSI FORMAT OUTPUT ====================
+
+def format_final_output(original_text, nickname, region, uid, sid, android, ios):
+    """Format output final sesuai permintaan"""
+    
+    # Ekstrak bind info dari text asli
+    bind_lines = []
+    lines = original_text.split('\n')
+    
+    for line in lines:
+        if any(keyword in line for keyword in ['Moonton', 'Google Play', 'Facebook', 'Tiktok', 'VK', 'Apple', 'GCID', 'Telegram', 'WhatsApp']):
+            # Bersihkan format
+            clean_line = line.replace('✧', '•').strip()
+            # Hapus spasi berlebih
+            clean_line = re.sub(r'\s+', ' ', clean_line)
+            bind_lines.append(clean_line)
+    
+    # Gabungkan bind info
+    bind_info = '\n'.join(bind_lines) if bind_lines else '• Data bind tidak tersedia'
+    
+    # Format final
+    final = f"""INFORMASI AKUN
+
+ID: {uid}
+Server: {sid}
+Nickname: {nickname}
+Region: {region}
+
+BIND INFO:
+{bind_info}
+
+Device Login:
+• Android: {android} perangkat
+• iOS: {ios} perangkat"""
+    
+    return final
+
 # ==================== RETRY PENDING REQUESTS ====================
 
 async def retry_pending_requests():
     """Kirim ulang request yang pending setelah captcha selesai"""
-    logger.info("🔄 Retrying pending requests immediately...")
+    logger.info("🔄 Retrying pending requests...")
     
     retry_count = 0
     while True:
@@ -559,8 +574,8 @@ async def message_handler(event):
             android = android_match.group(1) if android_match else '0'
             ios = ios_match.group(1) if ios_match else '0'
             
-            # Panggil API GoPay untuk dapat nickname & region
-            gopay_result = await validate_mlbb_gopay(uid, sid)
+            # Panggil API GoPay (sync version)
+            gopay_result = validate_mlbb_gopay_sync(uid, sid)
             nickname = gopay_result['nickname']
             region = gopay_result['region']
             
@@ -604,8 +619,8 @@ async def message_handler(event):
     
     # ===== CEK APAKAH INI PESAN RATE LIMIT =====
     if 'please wait' in text.lower() or 'rate limit' in text.lower():
-        logger.warning("⏳ RATE LIMIT DARI BOT A! Menunggu 60 detik...")
-        await asyncio.sleep(60)
+        logger.warning("⏳ RATE LIMIT DARI BOT A! Menunggu 30 detik...")
+        await asyncio.sleep(30)
         logger.info("✅ Selesai menunggu rate limit")
         logger.info("=" * 80)
         return
@@ -748,6 +763,15 @@ async def main():
         
         me = await client.get_me()
         logger.info(f"✅ Logged in as: {me.first_name} (@{me.username})")
+        
+        # PASTIKAN LIBRARY MENGENAL BOT A
+        try:
+            logger.info("🔍 Resolving Bot A entity...")
+            bot_entity = await client.get_entity('bengkelmlbb_bot')
+            logger.info(f"✅ Bot A entity found: {bot_entity.id} - {bot_entity.first_name}")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not resolve Bot A: {e}")
+            logger.info("⏋ Bot A will be resolved when first message is sent")
         
         client.add_event_handler(message_handler)
         client.add_event_handler(message_edit_handler)
