@@ -2,7 +2,6 @@ const { TelegramClient } = require("telegram");
 const { StringSession } = require("telegram/sessions");
 const redis = require('redis');
 const axios = require('axios');
-const { MTProto } = require('@mtproto/core');
 
 // Redis connection
 const redisClient = redis.createClient({
@@ -26,12 +25,19 @@ const client = new TelegramClient(
   apiHash,
   {
     connectionRetries: 5,
-    useWSS: true,
-    baseDc: 2,
-    requestTimeout: 30000,
-    floodSleepThreshold: 60
+    useWSS: false,
+    baseDc: 4,
+    requestTimeout: 60000,
+    floodSleepThreshold: 90,
+    deviceModel: 'Heroku',
+    systemVersion: 'Linux',
+    appVersion: '1.0.0',
+    langCode: 'en',
+    timeout: 30000
   }
 );
+
+client.setLogLevel('none');
 
 let botStatus = {
   inCaptcha: false
@@ -39,6 +45,29 @@ let botStatus = {
 
 async function start() {
   try {
+    // Coba koneksi ke beberapa DC
+    const dcs = [4, 2, 5, 1, 3];
+    let connected = false;
+    
+    for (const dc of dcs) {
+      console.log(`🔄 Mencoba DC ${dc}...`);
+      client.session.setDC(dc, '149.154.167.51', 443);
+      
+      try {
+        await client.connect();
+        connected = true;
+        console.log(`✅ Terkoneksi ke DC ${dc}`);
+        break;
+      } catch (err) {
+        console.log(`❌ DC ${dc} gagal:`, err.message);
+        continue;
+      }
+    }
+    
+    if (!connected) {
+      throw new Error('Gagal konek ke semua DC');
+    }
+    
     await client.start();
     console.log('✅ Userbot started!');
 
