@@ -68,7 +68,7 @@ async function start() {
     console.log(`📤 Request dari ${userId}: /info ${args.join(' ')}`);
   });
 
-  // Health check
+  // Command /ping
   bot.command('ping', (ctx) => ctx.reply('pong'));
 
   bot.launch();
