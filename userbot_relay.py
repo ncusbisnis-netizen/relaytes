@@ -11,9 +11,9 @@ import requests
 import base64
 from PIL import Image, ImageEnhance
 
-# Setup logging
+# Setup logging - SUDAH DIPERBAIKI!
 logging.basicConfig(
-    format='%(asktime)s - %(name)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ SESSION_STRING = os.environ.get('SESSION_STRING', '')
 BOT_B_TOKEN = os.environ.get('BOT_B_TOKEN', '')
 BOT_A_CHAT_ID = int(os.environ.get('BOT_A_CHAT_ID', 0))
 REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
-OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', '')  # API Key OCR.space
+OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', '')
 
 # Validasi environment
 if not all([API_ID, API_HASH, SESSION_STRING, BOT_B_TOKEN, BOT_A_CHAT_ID, REDIS_URL]):
@@ -49,7 +49,7 @@ client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 bot_status = {'in_captcha': False}
 sent_requests = {}
-waiting_for_result = {}  # State untuk tracking apakah sedang menunggu hasil info
+waiting_for_result = {}
 
 # ==================== OCR ONLINE FUNCTION ====================
 
@@ -81,9 +81,9 @@ async def read_number_from_photo_online(message):
             'base64Image': f'data:image/jpeg;base64,{image_data}',
             'apikey': OCR_SPACE_API_KEY,
             'language': 'eng',
-            'OCREngine': '2',  # Engine 2 lebih akurat untuk captcha
+            'OCREngine': '2',
             'isTable': 'false',
-            'scale': 'true',  # Upscale untuk gambar kecil
+            'scale': 'true',
             'detectOrientation': 'true'
         }
         
@@ -95,7 +95,6 @@ async def read_number_from_photo_online(message):
         if response.status_code == 200:
             result = response.json()
             
-            # Cek apakah OCR berhasil
             if result.get('IsErroredOnProcessing') == False:
                 if result.get('ParsedResults') and len(result['ParsedResults']) > 0:
                     text = result['ParsedResults'][0].get('ParsedText', '')
@@ -190,7 +189,6 @@ async def message_handler(event):
     # ===== CEK APAKAH INI PESAN VERIFIKASI SUKSES =====
     if text and ('verification successful' in text.lower() or 'verified' in text.lower()):
         logger.info("✅ Captcha verification successful - IGNORED (not forwarded)")
-        # STATE TETAP TRUE, KARENA MASIH MENUNGGU HASIL INFO
         logger.info(f"📋 Still waiting for result: {waiting_for_result.get(chat_id, False)}")
         logger.info("=" * 80)
         return
@@ -259,20 +257,17 @@ async def message_handler(event):
             # Proses ulang request pending (TAPI STATE TETAP TRUE)
             await retry_pending_requests()
             
-            # STATE TIDAK DIRESET DI SINI!
             logger.info(f"📋 Waiting for result masih: {waiting_for_result[chat_id]}")
         else:
             logger.error("❌❌❌ Gagal mendapatkan captcha code")
             logger.info("⏳ Menunggu 60 detik sebelum coba lagi...")
             await asyncio.sleep(60)
             bot_status['in_captcha'] = False
-            # STATE TETAP TRUE KARENA MASIH AKAN MENCOBA LAGI
         
         logger.info("=" * 80)
         return
     
     # ===== BUKAN CAPTCHA - CEK APAKAH INI HASIL INFO =====
-    # Cek apakah kita sedang menunggu hasil
     if waiting_for_result.get(chat_id, False):
         logger.info("📨📨📨 Hasil info dari Bot A - FORWARDING TO USER")
         
