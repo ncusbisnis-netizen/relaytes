@@ -6,8 +6,9 @@ import re
 import logging
 import json
 import redis
-from pyrogram import Client, filters
+from pyrogram import Client, filters, handlers
 from pyrogram.types import Message
+from pyrogram.handlers import MessageHandler, RawUpdateHandler
 import pytesseract
 from PIL import Image, ImageEnhance
 import cv2
@@ -48,13 +49,19 @@ except Exception as e:
     logger.error(f"❌ Redis connection failed: {e}")
     exit(1)
 
-# Pyrogram Client dengan session string
+# Pyrogram Client dengan konfigurasi khusus
 app = Client(
     name="relay_bot",
     session_string=SESSION_STRING,
     api_id=API_ID,
     api_hash=API_HASH,
-    in_memory=True
+    in_memory=True,
+    workers=4,  # Tambah worker untuk menerima update
+    sleep_threshold=30,
+    test_mode=False,
+    no_updates=False,  # Pastikan tidak memblokir update
+    takeout=False,
+    max_concurrent_transmissions=4
 )
 
 bot_status = {'in_captcha': False}
@@ -117,16 +124,15 @@ async def read_number_from_photo(photo_message):
         logger.error(f"❌ OCR error: {e}")
         return None
 
-# ==================== HANDLER SEMUA PESAN - TANPA FILTER ====================
+# ==================== HANDLER UTAMA PESAN ====================
 
-@app.on_message()
-async def handle_all_messages(client, message: Message):
+async def message_handler(client, message: Message):
     """
-    Handler yang menangkap SEMUA pesan APAPUN, dari SIAPAPUN
+    Handler untuk semua pesan - dipanggil secara eksplisit
     """
-    # LOG SUPER LENGKAP - TANPA FILTER
+    # LOG LENGKAP
     logger.info("=" * 80)
-    logger.info("🔥🔥🔥 RAW MESSAGE CAUGHT - NO FILTER 🔥🔥🔥")
+    logger.info("🔥🔥🔥 MESSAGE HANDLER TRIGGERED 🔥🔥🔥")
     logger.info(f"⏰ Time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info(f"📌 Message ID: {message.id}")
     logger.info(f"💬 Chat ID: {message.chat.id}")
@@ -136,101 +142,106 @@ async def handle_all_messages(client, message: Message):
     logger.info(f"👤 From First Name: {message.from_user.first_name if message.from_user else 'None'}")
     logger.info(f"🤖 Is Bot: {message.from_user.is_bot if message.from_user else 'N/A'}")
     logger.info(f"📸 Has Photo: {bool(message.photo)}")
-    logger.info(f"🎥 Has Video: {bool(message.video)}")
-    logger.info(f"📄 Has Document: {bool(message.document)}")
-    logger.info(f"🔊 Has Audio: {bool(message.audio)}")
-    logger.info(f"📊 Has Media Group: {bool(message.media_group_id)}")
-    logger.info(f"🔘 Has Reply Markup: {bool(message.reply_markup)}")
-    
-    # Text dari mana pun
-    text = ""
-    if message.text:
-        text = message.text
-        logger.info(f"📝 Text from message.text: '{text}'")
-    elif message.caption:
-        text = message.caption
-        logger.info(f"📝 Text from message.caption: '{text}'")
-    
-    logger.info(f"📝 Text length: {len(text)}")
-    logger.info(f"📝 Text preview: '{text[:200]}'")
-    
-    # Forward info
-    if message.forward_from:
-        logger.info(f"↪️ Forward From: {message.forward_from.id} - @{message.forward_from.username}")
-    if message.forward_from_chat:
-        logger.info(f"↪️ Forward From Chat: {message.forward_from_chat.id} - {message.forward_from_chat.title}")
-    
-    # Reply info
-    if message.reply_to_message:
-        logger.info(f"↩️ Reply to message ID: {message.reply_to_message.id}")
-    
-    # Service message
-    if message.service:
-        logger.info(f"🛠️ Service message: {message.service}")
-    
+    logger.info(f"📝 Text: '{message.text or message.caption or ''}'")
     logger.info("=" * 80)
     
-    # ========== PROSES SEMUA PESAN, TIDAK ADA FILTER ==========
-    # Kita proses SEMUA pesan yang masuk, tanpa membedakan sumber
+    # Ambil teks dari mana pun
+    text = message.text or message.caption or ''
     
-    # CEK APAKAH INI CAPTCHA (berdasarkan ciri-ciri)
+    # CEK APAKAH DARI BOT A
+    from_bot_a = False
+    
+    # Cek 1: Chat ID
+    if message.chat.id == BOT_A_CHAT_ID:
+        from_bot_a = True
+        logger.info("✅✅✅ MATCH: Chat ID = Bot A")
+    
+    # Cek 2: From User ID
+    if message.from_user and message.from_user.id == BOT_A_CHAT_ID:
+        from_bot_a = True
+        logger.info("✅✅✅ MATCH: User ID = Bot A")
+    
+    # Cek 3: Username
+    if message.from_user and message.from_user.username and message.from_user.username.lower() == 'bengkelmlbb_bot':
+        from_bot_a = True
+        logger.info("✅✅✅ MATCH: Username = Bot A")
+    
+    if from_bot_a:
+        logger.info("🚨🚨🚨 INI PESAN DARI BOT A! WAJIB DIPROSES!")
+        await process_bot_a_message(client, message)
+    else:
+        logger.info("❌ Bukan dari Bot A, diabaikan")
+
+async def process_bot_a_message(client, message: Message):
+    """
+    Proses khusus untuk pesan dari Bot A
+    """
+    text = message.text or message.caption or ''
+    
+    logger.info("=" * 80)
+    logger.info("🎯🎯🎯 MEMPROSES PESAN DARI BOT A 🎯🎯🎯")
+    logger.info(f"📸 Has Photo: {bool(message.photo)}")
+    logger.info(f"📝 Full Text: '{text}'")
+    logger.info("=" * 80)
+    
+    # ===== CEK CAPTCHA =====
     is_captcha = False
     captcha_code = None
     
-    # Ciri 1: Ada foto (kemungkinan besar captcha)
+    # Ciri 1: Ada foto (pasti captcha)
     if message.photo:
-        logger.info("📸 PHOTO DETECTED - Memeriksa kemungkinan captcha")
+        logger.info("📸 FOTO DARI BOT A - PASTI CAPTCHA")
         is_captcha = True
         
-        # Ambil angka dari caption jika ada
+        # Ambil dari caption jika ada
         if text:
             six_digit = re.findall(r'(\d{6})', text)
             if six_digit:
                 captcha_code = six_digit[0]
-                logger.info(f"✅ Found 6-digit in caption: {captcha_code}")
+                logger.info(f"✅ Captcha dari caption: {captcha_code}")
     
-    # Ciri 2: Ada teks dengan angka 6 digit dan kata kunci
+    # Ciri 2: Teks mengandung angka 6 digit + kata kunci
     if not captcha_code and text:
         six_digit = re.findall(r'(\d{6})', text)
         if six_digit:
-            keywords = ['captcha', 'verify', 'code', 'enter', 'verification', 'kode', 'masukkan']
+            keywords = ['captcha', 'verify', 'code', 'enter', 'verification', 'kode']
             if any(kw in text.lower() for kw in keywords):
                 is_captcha = True
                 captcha_code = six_digit[0]
-                logger.info(f"✅ Text captcha detected: {captcha_code}")
+                logger.info(f"✅ Captcha dari teks: {captcha_code}")
     
-    # Ciri 3: Baris pertama adalah 6 digit angka
+    # Ciri 3: Baris pertama 6 digit
     if not captcha_code and text:
         lines = text.strip().split('\n')
         if lines and lines[0].strip().isdigit() and len(lines[0].strip()) == 6:
             is_captcha = True
             captcha_code = lines[0].strip()
-            logger.info(f"✅ First line 6-digit captcha: {captcha_code}")
+            logger.info(f"✅ Captcha dari baris pertama: {captcha_code}")
     
-    # ===== JIKA CAPTCHA, PROSES =====
+    # ===== JIKA CAPTCHA =====
     if is_captcha:
-        logger.warning("🚫🚫🚫 CAPTCHA TERDETEKSI!")
+        logger.warning("🚫🚫🚫 CAPTCHA DARI BOT A TERDETEKSI!")
         
-        # Jika captcha_code belum ada (foto tanpa caption), pakai OCR
+        # Jika captcha_code belum ada (foto tanpa teks), pakai OCR
         if not captcha_code and message.photo:
-            logger.info("🔍 No code in text, trying OCR...")
+            logger.info("🔍 Tidak ada teks, mencoba OCR...")
             captcha_code = await read_number_from_photo(message)
         
         if captcha_code:
             logger.info(f"✅✅✅ CAPTCHA CODE: {captcha_code}")
             bot_status['in_captcha'] = True
             
-            # Kirim verifikasi ke Bot A (pakai ID yang benar)
+            # Kirim verifikasi ke Bot A
             await client.send_message(BOT_A_CHAT_ID, f"/verify {captcha_code}")
-            logger.info(f"📤📤📤 Verification sent to Bot A: /verify {captcha_code}")
+            logger.info(f"📤📤📤 Verifikasi dikirim: /verify {captcha_code}")
             
             # Tunggu sebentar
             await asyncio.sleep(3)
             
             bot_status['in_captcha'] = False
-            logger.info("✅ Captcha handled")
+            logger.info("✅ Captcha selesai diproses")
             
-            # Proses ulang request yang pending
+            # Proses ulang request pending
             await retry_pending_requests()
         else:
             logger.error("❌❌❌ Gagal mendapatkan kode captcha")
@@ -240,16 +251,15 @@ async def handle_all_messages(client, message: Message):
         return
     
     # ===== BUKAN CAPTCHA - MUNGKIN HASIL INFO =====
-    # Hanya proses jika ada teks (bukan foto tanpa teks)
     if text:
-        logger.info("📨📨📨 Memproses sebagai hasil normal")
+        logger.info("📨📨📨 Memproses sebagai hasil info")
         
-        # AMBIL REQUEST DARI QUEUE
+        # Ambil request dari queue
         request_id = r.lpop('pending_requests')
         
         if request_id:
             request_id = request_id.decode('utf-8')
-            logger.info(f"📋 Processing request ID: {request_id}")
+            logger.info(f"📋 Memproses request ID: {request_id}")
             
             request_data_json = r.get(request_id)
             
@@ -259,9 +269,9 @@ async def handle_all_messages(client, message: Message):
             
             request_data = json.loads(request_data_json)
             user_id = request_data['chat_id']
-            logger.info(f"👤 Forward to user: {user_id}")
+            logger.info(f"👤 Forward ke user: {user_id}")
             
-            # KIRIM KE USER VIA BOT B
+            # Kirim ke user via Bot B
             url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
             data = {
                 'chat_id': user_id,
@@ -269,26 +279,40 @@ async def handle_all_messages(client, message: Message):
                 'parse_mode': 'HTML'
             }
             
-            logger.info(f"📤 Sending to Bot B...")
+            logger.info(f"📤 Mengirim ke Bot B...")
             
             try:
                 response = requests.post(url, json=data, timeout=10)
                 logger.info(f"📥 Response status: {response.status_code}")
                 
                 if response.status_code == 200:
-                    logger.info(f"✅✅✅ SUCCESS: Forwarded to user {user_id}")
+                    logger.info(f"✅✅✅ SUCCESS: Terkirim ke user {user_id}")
                     r.delete(request_id)
                 else:
-                    logger.error(f"❌ Failed to forward: {response.status_code}")
+                    logger.error(f"❌ Gagal forward: {response.status_code}")
                     r.rpush('pending_requests', request_id)
                     
             except Exception as e:
                 logger.error(f"❌ Forward error: {e}")
                 r.rpush('pending_requests', request_id)
-        else:
-            logger.warning("⚠️ No pending requests in queue")
+    else:
+        logger.warning("⚠️ Pesan dari Bot A tanpa teks (mungkin media saja)")
+
+# ==================== RAW UPDATE HANDLER (UNTUK DEBUG) ====================
+
+async def raw_update_handler(client, update, users, chats):
+    """
+    Handler untuk menangkap SEMUA update mentah dari Telegram
+    """
+    logger.info("📡📡📡 RAW UPDATE RECEIVED 📡📡📡")
+    logger.info(f"Update type: {type(update)}")
+    logger.info(f"Update: {update}")
     
-    logger.info("=" * 80)
+    # Cek apakah ini update pesan
+    if hasattr(update, 'message'):
+        logger.info("Ini adalah update pesan!")
+    elif hasattr(update, 'channel_post'):
+        logger.info("Ini adalah channel post!")
 
 # ==================== RETRY PENDING REQUESTS ====================
 
@@ -296,7 +320,7 @@ async def retry_pending_requests():
     """
     Kirim ulang request yang pending setelah captcha selesai
     """
-    logger.info("🔄 Retrying pending requests...")
+    logger.info("🔄 Memproses ulang request pending...")
     
     retry_count = 0
     while True:
@@ -325,7 +349,7 @@ async def retry_pending_requests():
         await asyncio.sleep(2)
     
     if retry_count > 0:
-        logger.info(f"✅ Retried {retry_count} requests")
+        logger.info(f"✅ Meretry {retry_count} request")
 
 # ==================== QUEUE PROCESSOR ====================
 
@@ -358,11 +382,11 @@ async def process_queue():
                         
                         # Jika sudah dikirim kurang dari 30 detik yang lalu, SKIP
                         if time_diff < 30:
-                            logger.info(f"⏳ Request {request_id} already sent {time_diff:.1f}s ago, waiting...")
+                            logger.info(f"⏳ Request {request_id} sudah dikirim {time_diff:.1f}s lalu, menunggu...")
                             await asyncio.sleep(5)
                             continue
                         elif time_diff > 120:  # Lebih dari 2 menit, anggap expired
-                            logger.warning(f"⚠️ Request {request_id} expired (>2 minutes), removing from queue")
+                            logger.warning(f"⚠️ Request {request_id} expired (>2 menit), hapus dari queue")
                             # Hapus dari queue
                             r.lpop('pending_requests')
                             r.delete(request_id)
@@ -382,21 +406,21 @@ async def process_queue():
                     
                     # Kirim ke Bot A
                     cmd = f"{request_data['command']} {request_data['args'][0]} {request_data['args'][1]}"
-                    logger.info(f"📤 Sending to Bot A: {cmd}")
+                    logger.info(f"📤 Mengirim ke Bot A: {cmd}")
                     
                     try:
                         await app.send_message(BOT_A_CHAT_ID, cmd)
-                        logger.info(f"✅ Sent to Bot A: {cmd}")
+                        logger.info(f"✅ Terkirim ke Bot A: {cmd}")
                         
                         # Catat waktu pengiriman
                         sent_requests[request_id] = current_time
                         
                     except Exception as e:
-                        logger.error(f"❌ Failed to send to Bot A: {e}")
+                        logger.error(f"❌ Gagal kirim ke Bot A: {e}")
                         
                         # Kalau error, tunggu sebentar
                         if "PEER_ID_INVALID" in str(e):
-                            logger.warning("⏳ Bot A not ready, waiting 30 seconds...")
+                            logger.warning("⏳ Bot A tidak siap, menunggu 30 detik...")
                             await asyncio.sleep(30)
             
         except Exception as e:
@@ -416,9 +440,25 @@ async def main():
     logger.info("🚀 Starting userbot...")
     
     try:
+        # Daftarkan handler secara manual
+        app.add_handler(MessageHandler(message_handler))
+        app.add_handler(RawUpdateHandler(raw_update_handler))
+        
         # Start Pyrogram client
         await app.start()
         logger.info("✅ Userbot started!")
+        
+        # Informasi user
+        me = await app.get_me()
+        logger.info(f"✅ Logged in as: {me.first_name} (@{me.username})")
+        logger.info(f"✅ User ID: {me.id}")
+        
+        # Coba koneksi ke Bot A
+        try:
+            bot_info = await app.get_users(BOT_A_CHAT_ID)
+            logger.info(f"✅ Bot A info: {bot_info.first_name}")
+        except Exception as e:
+            logger.warning(f"⚠️ Cannot get Bot A info: {e}")
         
         # Jalankan queue processor
         await process_queue()
