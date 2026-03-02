@@ -49,7 +49,7 @@ client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 bot_status = {'in_captcha': False}
 sent_requests = {}
-waiting_for_result = {}  # State untuk tracking apakah sedang menunggu hasil info
+waiting_for_result = {}
 
 # ==================== OCR ONLINE FUNCTION ====================
 
@@ -176,8 +176,7 @@ async def message_handler(event):
     logger.info(f"💬 Chat ID: {chat_id}")
     logger.info(f"👤 Sender ID: {sender_id}")
     logger.info(f"📸 Has Photo: {bool(message.photo)}")
-    logger.info(f"📝 Text: '{text[:200]}'")
-    logger.info(f"📋 Current waiting_for_result: {waiting_for_result.get(chat_id, False)}")
+    logger.info(f"📝 Text preview: '{text[:100]}'")
     
     # CEK APAKAH DARI BOT A
     if chat_id != BOT_A_CHAT_ID and sender_id != BOT_A_CHAT_ID:
@@ -187,92 +186,9 @@ async def message_handler(event):
     
     logger.info("🎯🎯🎯 PESAN DARI BOT A DITERIMA!")
     
-    # ===== CEK APAKAH INI PESAN VERIFIKASI SUKSES =====
-    if text and ('verification successful' in text.lower() or 'verified' in text.lower()):
-        logger.info("✅ Captcha verification successful - IGNORED (not forwarded)")
-        logger.info(f"📋 Still waiting for result: {waiting_for_result.get(chat_id, False)}")
-        logger.info("=" * 80)
-        return
-    
-    # ===== CEK CAPTCHA =====
-    is_captcha = False
-    captcha_code = None
-    
-    # Cek 1: Ada foto (kemungkinan besar captcha)
-    if message.photo:
-        logger.info("📸 PHOTO DETECTED - This is a captcha")
-        is_captcha = True
-        
-        # Cek apakah ada angka di teks/caption
-        if text:
-            six_digit = re.findall(r'(\d{6})', text)
-            if six_digit:
-                captcha_code = six_digit[0]
-                logger.info(f"✅ Found code in caption: {captcha_code}")
-    
-    # Cek 2: Teks mengandung angka 6 digit + kata kunci
-    if not captcha_code and text:
-        six_digit = re.findall(r'(\d{6})', text)
-        if six_digit:
-            keywords = ['captcha', 'verify', 'code', 'enter', 'kode']
-            if any(kw in text.lower() for kw in keywords):
-                is_captcha = True
-                captcha_code = six_digit[0]
-                logger.info(f"✅ Found code in text: {captcha_code}")
-    
-    # Cek 3: Baris pertama 6 digit
-    if not captcha_code and text:
-        lines = text.strip().split('\n')
-        if lines and lines[0].strip().isdigit() and len(lines[0].strip()) == 6:
-            is_captcha = True
-            captcha_code = lines[0].strip()
-            logger.info(f"✅ Found code in first line: {captcha_code}")
-    
-    # ===== JIKA CAPTCHA =====
-    if is_captcha:
-        logger.warning("🚫 CAPTCHA DETECTED!")
-        
-        # SET STATE bahwa kita sedang menunggu hasil info (WAJIB ADA!)
-        waiting_for_result[chat_id] = True
-        logger.info(f"📋 Waiting for result SET to: {waiting_for_result[chat_id]}")
-        
-        # Jika captcha_code belum ada (foto tanpa teks), pakai OCR ONLINE
-        if not captcha_code and message.photo:
-            logger.info("🔍 No text code found, trying OCR online...")
-            captcha_code = await read_number_from_photo_online(message)
-        
-        if captcha_code and len(captcha_code) == 6:
-            logger.info(f"✅✅✅ CAPTCHA CODE: {captcha_code}")
-            bot_status['in_captcha'] = True
-            
-            # Kirim verifikasi ke Bot A
-            await client.send_message(BOT_A_CHAT_ID, f"/verify {captcha_code}")
-            logger.info(f"📤📤📤 Verification sent: /verify {captcha_code}")
-            
-            # Tunggu sebentar
-            await asyncio.sleep(3)
-            
-            bot_status['in_captcha'] = False
-            logger.info("✅ Captcha handled")
-            
-            # Proses ulang request pending (TAPI STATE TETAP TRUE)
-            await retry_pending_requests()
-            
-            logger.info(f"📋 Waiting for result masih: {waiting_for_result[chat_id]}")
-        else:
-            logger.error("❌❌❌ Gagal mendapatkan captcha code")
-            logger.info("⏳ Menunggu 60 detik sebelum coba lagi...")
-            await asyncio.sleep(60)
-            bot_status['in_captcha'] = False
-            # STATE TETAP TRUE KARENA AKAN COBA LAGI NANTI
-        
-        logger.info("=" * 80)
-        return
-    
-    # ===== BUKAN CAPTCHA - CEK APAKAH INI HASIL INFO =====
-    # Cek apakah kita sedang menunggu hasil
-    if waiting_for_result.get(chat_id, False):
-        logger.info("📨📨📨 Hasil info dari Bot A - FORWARDING TO USER")
+    # ===== CEK APAKAH INI HASIL INFO VALID (BERDASARKAN POLA) =====
+    if text.startswith('──────────────────────') and 'BIND ACCOUNT INFO' in text:
+        logger.info("✅✅✅ INI HASIL INFO VALID! FORWARDING KE USER...")
         
         # Ambil request dari queue
         request_id = r.lpop('pending_requests')
@@ -302,12 +218,11 @@ async def message_handler(event):
             try:
                 response = requests.post(url, json=data, timeout=10)
                 if response.status_code == 200:
-                    logger.info(f"✅✅✅ Terkirim ke user {user_id}")
+                    logger.info(f"✅✅✅ TERKIRIM KE USER {user_id}!")
                     r.delete(request_id)
                     
-                    # RESET STATE setelah berhasil forward
+                    # Reset state
                     waiting_for_result[chat_id] = False
-                    logger.info(f"📋 Waiting for result RESET to: {waiting_for_result[chat_id]}")
                 else:
                     logger.error(f"❌ Gagal forward: {response.status_code}")
                     r.rpush('pending_requests', request_id)
@@ -316,10 +231,86 @@ async def message_handler(event):
                 r.rpush('pending_requests', request_id)
         else:
             logger.warning("⚠️ Tidak ada request pending")
-    else:
-        logger.info("❌ Pesan dari Bot A tapi tidak menunggu hasil - IGNORED")
-        logger.info(f"📋 waiting_for_result = {waiting_for_result.get(chat_id, False)}")
+        
+        logger.info("=" * 80)
+        return
     
+    # ===== CEK APAKAH INI PESAN VERIFIKASI SUKSES =====
+    if text and ('verification successful' in text.lower() or 'verified' in text.lower()):
+        logger.info("✅ Captcha verification successful - IGNORED")
+        logger.info("=" * 80)
+        return
+    
+    # ===== CEK CAPTCHA =====
+    is_captcha = False
+    captcha_code = None
+    
+    # Cek 1: Ada foto (captcha)
+    if message.photo:
+        logger.info("📸 PHOTO DETECTED - This is a captcha")
+        is_captcha = True
+        
+        # SET STATE
+        waiting_for_result[chat_id] = True
+        logger.info(f"📋 Waiting for result SET to TRUE (from photo)")
+        
+        # Cek angka di caption
+        if text:
+            six_digit = re.findall(r'(\d{6})', text)
+            if six_digit:
+                captcha_code = six_digit[0]
+                logger.info(f"✅ Found code in caption: {captcha_code}")
+    
+    # Cek 2: Teks mengandung angka 6 digit + kata kunci
+    if not is_captcha and text:
+        six_digit = re.findall(r'(\d{6})', text)
+        if six_digit:
+            keywords = ['captcha', 'verify', 'code', 'enter', 'kode']
+            if any(kw in text.lower() for kw in keywords):
+                is_captcha = True
+                captcha_code = six_digit[0]
+                logger.info(f"✅ Found code in text: {captcha_code}")
+                
+                # SET STATE
+                waiting_for_result[chat_id] = True
+                logger.info(f"📋 Waiting for result SET to TRUE (from text)")
+    
+    # ===== JIKA CAPTCHA =====
+    if is_captcha:
+        logger.warning("🚫 CAPTCHA PROCESSING...")
+        
+        # PASTIKAN STATE SUDAH TRUE
+        waiting_for_result[chat_id] = True
+        
+        # Jika captcha_code belum ada, pakai OCR
+        if not captcha_code and message.photo:
+            logger.info("🔍 No text code, trying OCR...")
+            captcha_code = await read_number_from_photo_online(message)
+        
+        if captcha_code and len(captcha_code) == 6:
+            logger.info(f"✅✅✅ CAPTCHA CODE: {captcha_code}")
+            bot_status['in_captcha'] = True
+            
+            # Kirim verifikasi ke Bot A
+            await client.send_message(BOT_A_CHAT_ID, f"/verify {captcha_code}")
+            logger.info(f"📤 Verification sent: /verify {captcha_code}")
+            
+            await asyncio.sleep(3)
+            bot_status['in_captcha'] = False
+            
+            # Proses ulang request pending
+            await retry_pending_requests()
+        else:
+            logger.error("❌❌❌ Gagal mendapatkan captcha code")
+            await asyncio.sleep(60)
+            bot_status['in_captcha'] = False
+        
+        logger.info("=" * 80)
+        return
+    
+    # ===== PESAN LAIN DARI BOT A (IGNORE) =====
+    logger.info("❌ Pesan lain dari Bot A - IGNORED")
+    logger.info(f"📋 Text: {text[:50]}")
     logger.info("=" * 80)
 
 @events.register(events.MessageEdited)
