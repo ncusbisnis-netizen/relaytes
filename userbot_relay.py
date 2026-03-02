@@ -186,17 +186,27 @@ async def message_handler(event):
     
     logger.info("🎯🎯🎯 PESAN DARI BOT A DITERIMA!")
     
-    # ===== CEK APAKAH INI HASIL INFO VALID (BERDASARKAN POLA) =====
-    if text.startswith('──────────────────────') and 'BIND ACCOUNT INFO' in text:
+    # ===== CEK APAKAH INI PESAN VERIFIKASI SUKSES =====
+    if text and ('verification successful' in text.lower() or 'verified' in text.lower()):
+        logger.info("✅ Captcha verification successful - IGNORED")
+        logger.info("=" * 80)
+        return
+    
+    # ===== CEK APAKAH INI HASIL INFO VALID (YANG MAU DI-FORWARD) =====
+    if 'BIND ACCOUNT INFO' in text:
         logger.info("✅✅✅ INI HASIL INFO VALID! FORWARDING KE USER...")
+        logger.info(f"📝 Text length: {len(text)}")
+        
+        # Cek queue sebelum ambil
+        queue_length = r.llen('pending_requests')
+        logger.info(f"📊 Queue length before pop: {queue_length}")
         
         # Ambil request dari queue
         request_id = r.lpop('pending_requests')
+        logger.info(f"📋 Request ID from queue: {request_id}")
         
         if request_id:
             request_id = request_id.decode('utf-8')
-            logger.info(f"📋 Request ID: {request_id}")
-            
             request_data_json = r.get(request_id)
             
             if request_data_json is None:
@@ -206,6 +216,7 @@ async def message_handler(event):
             
             request_data = json.loads(request_data_json)
             user_id = request_data['chat_id']
+            logger.info(f"👤 Forward to user: {user_id}")
             
             # Kirim ke user via Bot B
             url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
@@ -217,6 +228,8 @@ async def message_handler(event):
             
             try:
                 response = requests.post(url, json=data, timeout=10)
+                logger.info(f"📥 Response status: {response.status_code}")
+                
                 if response.status_code == 200:
                     logger.info(f"✅✅✅ TERKIRIM KE USER {user_id}!")
                     r.delete(request_id)
@@ -225,19 +238,14 @@ async def message_handler(event):
                     waiting_for_result[chat_id] = False
                 else:
                     logger.error(f"❌ Gagal forward: {response.status_code}")
+                    logger.error(f"❌ Response: {response.text}")
                     r.rpush('pending_requests', request_id)
             except Exception as e:
                 logger.error(f"❌ Forward error: {e}")
                 r.rpush('pending_requests', request_id)
         else:
-            logger.warning("⚠️ Tidak ada request pending")
+            logger.warning("⚠️ TIDAK ADA REQUEST PENDING!")
         
-        logger.info("=" * 80)
-        return
-    
-    # ===== CEK APAKAH INI PESAN VERIFIKASI SUKSES =====
-    if text and ('verification successful' in text.lower() or 'verified' in text.lower()):
-        logger.info("✅ Captcha verification successful - IGNORED")
         logger.info("=" * 80)
         return
     
@@ -256,19 +264,21 @@ async def message_handler(event):
         
         # Cek angka di caption
         if text:
-            six_digit = re.findall(r'(\d{6})', text)
-            if six_digit:
-                captcha_code = six_digit[0]
+            # Ambil semua digit
+            digits = re.findall(r'\d', text)
+            if len(digits) >= 6:
+                captcha_code = ''.join(digits[:6])
                 logger.info(f"✅ Found code in caption: {captcha_code}")
     
     # Cek 2: Teks mengandung angka 6 digit + kata kunci
     if not is_captcha and text:
-        six_digit = re.findall(r'(\d{6})', text)
-        if six_digit:
+        # Ambil semua digit
+        digits = re.findall(r'\d', text)
+        if len(digits) >= 6:
             keywords = ['captcha', 'verify', 'code', 'enter', 'kode']
             if any(kw in text.lower() for kw in keywords):
                 is_captcha = True
-                captcha_code = six_digit[0]
+                captcha_code = ''.join(digits[:6])
                 logger.info(f"✅ Found code in text: {captcha_code}")
                 
                 # SET STATE
