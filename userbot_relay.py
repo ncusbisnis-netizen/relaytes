@@ -11,7 +11,7 @@ import requests
 import base64
 from PIL import Image, ImageEnhance
 
-# Setup logging - SUDAH DIPERBAIKI!
+# Setup logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -49,7 +49,7 @@ client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 bot_status = {'in_captcha': False}
 sent_requests = {}
-waiting_for_result = {}
+waiting_for_result = {}  # State untuk tracking apakah sedang menunggu hasil info
 
 # ==================== OCR ONLINE FUNCTION ====================
 
@@ -177,6 +177,7 @@ async def message_handler(event):
     logger.info(f"👤 Sender ID: {sender_id}")
     logger.info(f"📸 Has Photo: {bool(message.photo)}")
     logger.info(f"📝 Text: '{text[:200]}'")
+    logger.info(f"📋 Current waiting_for_result: {waiting_for_result.get(chat_id, False)}")
     
     # CEK APAKAH DARI BOT A
     if chat_id != BOT_A_CHAT_ID and sender_id != BOT_A_CHAT_ID:
@@ -231,7 +232,7 @@ async def message_handler(event):
     if is_captcha:
         logger.warning("🚫 CAPTCHA DETECTED!")
         
-        # SET STATE bahwa kita sedang menunggu hasil info
+        # SET STATE bahwa kita sedang menunggu hasil info (WAJIB ADA!)
         waiting_for_result[chat_id] = True
         logger.info(f"📋 Waiting for result SET to: {waiting_for_result[chat_id]}")
         
@@ -263,11 +264,13 @@ async def message_handler(event):
             logger.info("⏳ Menunggu 60 detik sebelum coba lagi...")
             await asyncio.sleep(60)
             bot_status['in_captcha'] = False
+            # STATE TETAP TRUE KARENA AKAN COBA LAGI NANTI
         
         logger.info("=" * 80)
         return
     
     # ===== BUKAN CAPTCHA - CEK APAKAH INI HASIL INFO =====
+    # Cek apakah kita sedang menunggu hasil
     if waiting_for_result.get(chat_id, False):
         logger.info("📨📨📨 Hasil info dari Bot A - FORWARDING TO USER")
         
@@ -315,6 +318,7 @@ async def message_handler(event):
             logger.warning("⚠️ Tidak ada request pending")
     else:
         logger.info("❌ Pesan dari Bot A tapi tidak menunggu hasil - IGNORED")
+        logger.info(f"📋 waiting_for_result = {waiting_for_result.get(chat_id, False)}")
     
     logger.info("=" * 80)
 
