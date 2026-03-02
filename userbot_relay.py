@@ -49,7 +49,7 @@ client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 bot_status = {'in_captcha': False}
 sent_requests = {}
-waiting_for_result = {}
+waiting_for_result = {}  # State per user (chat_id)
 
 # ==================== OCR ONLINE FUNCTION ====================
 
@@ -129,13 +129,24 @@ async def retry_pending_requests():
     """Kirim ulang request yang pending setelah captcha selesai"""
     logger.info("🔄 Retrying pending requests...")
     
+    # TUNGGU 60 DETIK DULU (KARENA RATE LIMIT)
+    logger.info("⏳ Waiting 60 seconds due to rate limit...")
+    await asyncio.sleep(60)
+    
     retry_count = 0
+    # Kumpulkan semua request yang pending
+    pending_requests = []
     while True:
         request_id = r.lpop('pending_requests')
         if not request_id:
             break
-            
-        request_id = request_id.decode('utf-8')
+        pending_requests.append(request_id)
+    
+    logger.info(f"📋 Found {len(pending_requests)} pending requests to retry")
+    
+    # Proses satu per satu dengan jeda
+    for request_id_bytes in pending_requests:
+        request_id = request_id_bytes.decode('utf-8')
         request_data_json = r.get(request_id)
         
         if request_data_json is None:
@@ -145,11 +156,13 @@ async def retry_pending_requests():
         cmd = f"{request_data['command']} {request_data['args'][0]} {request_data['args'][1]}"
         
         await client.send_message(BOT_A_CHAT_ID, cmd)
-        logger.info(f"🔄 Retry: {cmd}")
+        logger.info(f"🔄 Retry: {cmd} for user {request_data['chat_id']}")
         
+        # Simpan kembali dengan expiry baru
         r.setex(request_id, 300, json.dumps(request_data))
+        
         retry_count += 1
-        await asyncio.sleep(2)
+        await asyncio.sleep(5)  # JEDA ANTAR RETRY 5 DETIK
     
     if retry_count > 0:
         logger.info(f"✅ Retried {retry_count} requests")
@@ -186,13 +199,21 @@ async def message_handler(event):
     
     logger.info("🎯🎯🎯 PESAN DARI BOT A DITERIMA!")
     
+    # ===== CEK APAKAH INI PESAN RATE LIMIT =====
+    if 'please wait' in text.lower() or 'rate limit' in text.lower():
+        logger.warning("⏳ RATE LIMIT DARI BOT A! Menunggu 60 detik...")
+        await asyncio.sleep(60)
+        logger.info("✅ Selesai menunggu rate limit")
+        logger.info("=" * 80)
+        return
+    
     # ===== CEK APAKAH INI PESAN VERIFIKASI SUKSES =====
     if text and ('verification successful' in text.lower() or 'verified' in text.lower()):
         logger.info("✅ Captcha verification successful - IGNORED")
         logger.info("=" * 80)
         return
     
-    # ===== CEK APAKAH INI HASIL INFO VALID (YANG MAU DI-FORWARD) =====
+    # ===== CEK APAKAH INI HASIL INFO VALID =====
     if 'BIND ACCOUNT INFO' in text:
         logger.info("✅✅✅ INI HASIL INFO VALID! FORWARDING KE USER...")
         logger.info(f"📝 Text length: {len(text)}")
@@ -234,8 +255,9 @@ async def message_handler(event):
                     logger.info(f"✅✅✅ TERKIRIM KE USER {user_id}!")
                     r.delete(request_id)
                     
-                    # Reset state
-                    waiting_for_result[chat_id] = False
+                    # Reset state untuk user ini
+                    if user_id in waiting_for_result:
+                        waiting_for_result[user_id] = False
                 else:
                     logger.error(f"❌ Gagal forward: {response.status_code}")
                     logger.error(f"❌ Response: {response.text}")
@@ -258,11 +280,16 @@ async def message_handler(event):
         logger.info("📸 PHOTO DETECTED - This is a captcha")
         is_captcha = True
         
-        # SET STATE
-        waiting_for_result[chat_id] = True
-        logger.info(f"📋 Waiting for result SET to TRUE (from photo)")
+        # SET STATE untuk user yang menunggu (ambil dari queue teratas)
+        top_request = r.lindex('pending_requests', 0)
+        if top_request:
+            top_req_id = top_request.decode('utf-8')
+            top_req_data = json.loads(r.get(top_req_id))
+            waiting_user = top_req_data['chat_id']
+            waiting_for_result[waiting_user] = True
+            logger.info(f"📋 Waiting for result SET to TRUE for user {waiting_user}")
         
-        # Cek angka di caption
+        # Cek angka di caption (bisa dengan spasi)
         if text:
             # Ambil semua digit
             digits = re.findall(r'\d', text)
@@ -281,16 +308,18 @@ async def message_handler(event):
                 captcha_code = ''.join(digits[:6])
                 logger.info(f"✅ Found code in text: {captcha_code}")
                 
-                # SET STATE
-                waiting_for_result[chat_id] = True
-                logger.info(f"📋 Waiting for result SET to TRUE (from text)")
+                # SET STATE untuk user yang menunggu
+                top_request = r.lindex('pending_requests', 0)
+                if top_request:
+                    top_req_id = top_request.decode('utf-8')
+                    top_req_data = json.loads(r.get(top_req_id))
+                    waiting_user = top_req_data['chat_id']
+                    waiting_for_result[waiting_user] = True
+                    logger.info(f"📋 Waiting for result SET to TRUE for user {waiting_user}")
     
     # ===== JIKA CAPTCHA =====
     if is_captcha:
         logger.warning("🚫 CAPTCHA PROCESSING...")
-        
-        # PASTIKAN STATE SUDAH TRUE
-        waiting_for_result[chat_id] = True
         
         # Jika captcha_code belum ada, pakai OCR
         if not captcha_code and message.photo:
@@ -341,6 +370,7 @@ async def process_queue():
                 logger.info(f"📊 Queue length: {queue_length}")
             
             if not bot_status['in_captcha'] and queue_length > 0:
+                # Ambil request pertama tanpa menghapus
                 request_id_bytes = r.lindex('pending_requests', 0)
                 
                 if request_id_bytes:
@@ -373,7 +403,7 @@ async def process_queue():
                     
                     try:
                         await client.send_message(BOT_A_CHAT_ID, cmd)
-                        logger.info(f"📤 Sent to Bot A: {cmd}")
+                        logger.info(f"📤 Sent to Bot A: {cmd} for user {request_data['chat_id']}")
                         sent_requests[request_id] = current_time
                     except Exception as e:
                         logger.error(f"❌ Failed to send to Bot A: {e}")
