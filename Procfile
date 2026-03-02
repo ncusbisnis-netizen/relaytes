@@ -1,2 +1,2 @@
-bot: node bot-b.js
-relay: node userbot-relay.js
+bot: python bot_b.py
+relay: python userbot_relay.py
