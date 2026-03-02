@@ -58,6 +58,7 @@ app = Client(
 )
 
 bot_status = {'in_captcha': False}
+pending_messages = {}  # Untuk tracking request_id berdasarkan pesan
 
 # ==================== FUNGSI OCR UNTUK CAPTCHA ====================
 
@@ -187,7 +188,10 @@ async def handle_bot_reply(client, message: Message):
     # ===== BUKAN CAPTCHA - HARUSNYA INI HASIL INFO =====
     logger.info("📨 Processing as normal message (result)")
     
-    # Ambil request dari queue
+    # CEK APAKAH INI HASIL DARI REQUEST SEBELUMNYA
+    # Biasanya hasil /info tidak mengandung kata kunci captcha
+    
+    # Ambil request dari queue (FIFO - first in first out)
     request_id = r.lpop('pending_requests')
     
     if request_id:
@@ -197,36 +201,64 @@ async def handle_bot_reply(client, message: Message):
         request_data_json = r.get(request_id)
         
         if request_data_json is None:
-            logger.warning(f"⚠️ Request {request_id} expired")
+            logger.warning(f"⚠️ Request {request_id} expired or not found")
+            
+            # TAMPILKAN SEMUA REQUEST DI REDIS UNTUK DEBUG
+            all_keys = r.keys('req:*')
+            logger.info(f"🔑 All Redis keys: {all_keys}")
             return
         
         request_data = json.loads(request_data_json)
-        logger.info(f"👤 Forward to user: {request_data['chat_id']}")
+        user_id = request_data['chat_id']
+        logger.info(f"👤 Forward to user: {user_id}")
+        logger.info(f"💬 Original command: {request_data['command']} {' '.join(request_data['args'])}")
         
-        # Kirim ke user via Bot B
+        # ===== KIRIM KE USER VIA BOT B =====
         url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
         data = {
-            'chat_id': request_data['chat_id'],
+            'chat_id': user_id,
             'text': text,
             'parse_mode': 'HTML'
         }
         
+        logger.info(f"📤 Sending to Bot B API...")
+        
         try:
             response = requests.post(url, json=data, timeout=10)
+            logger.info(f"📥 Response status: {response.status_code}")
             
             if response.status_code == 200:
-                logger.info(f"✅ SUCCESS: Forwarded to user {request_data['chat_id']}")
+                logger.info(f"✅ SUCCESS: Forwarded to user {user_id}")
+                logger.info(f"📤 Response body: {response.json()}")
+                
+                # HAPUS REQUEST DARI REDIS (sudah sukses)
+                r.delete(request_id)
+                
             else:
                 logger.error(f"❌ Failed to forward: {response.status_code}")
                 logger.error(f"❌ Response: {response.text}")
-                # Kembalikan ke queue
-                r.rpush('pending_requests', request_id)
                 
+                # Kembalikan ke queue kalau gagal
+                r.rpush('pending_requests', request_id)
+                logger.info(f"🔄 Request {request_id} returned to queue")
+                
+        except requests.exceptions.Timeout:
+            logger.error("❌ Timeout saat mengirim ke Bot B")
+            r.rpush('pending_requests', request_id)
+            
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"❌ Connection error: {e}")
+            r.rpush('pending_requests', request_id)
+            
         except Exception as e:
-            logger.error(f"❌ Forward error: {e}")
+            logger.error(f"❌ Unexpected error: {e}")
             r.rpush('pending_requests', request_id)
     else:
         logger.warning("⚠️ No pending requests in queue")
+        
+        # TAMPILKAN QUEUE UNTUK DEBUG
+        queue_content = r.lrange('pending_requests', 0, -1)
+        logger.info(f"📋 Current queue: {queue_content}")
 
 # ==================== RETRY PENDING REQUESTS ====================
 
@@ -246,6 +278,7 @@ async def retry_pending_requests():
         request_data_json = r.get(request_id)
         
         if request_data_json is None:
+            logger.warning(f"⚠️ Request {request_id} expired")
             continue
         
         request_data = json.loads(request_data_json)
@@ -274,30 +307,46 @@ async def process_queue():
     
     while True:
         try:
-            if not bot_status['in_captcha']:
-                request_id = r.lpop('pending_requests')
+            # Cek panjang queue
+            queue_length = r.llen('pending_requests')
+            if queue_length > 0:
+                logger.info(f"📊 Queue length: {queue_length}")
+            
+            if not bot_status['in_captcha'] and queue_length > 0:
+                # Ambil request dari queue (tapi jangan di-pop dulu)
+                # Kita lihat request pertama
+                request_id_bytes = r.lindex('pending_requests', 0)
                 
-                if request_id:
-                    request_id = request_id.decode('utf-8')
+                if request_id_bytes:
+                    request_id = request_id_bytes.decode('utf-8')
                     request_data_json = r.get(request_id)
                     
-                    if request_data_json is None:
-                        continue
-                    
-                    request_data = json.loads(request_data_json)
-                    
-                    # Kirim ke Bot A
-                    cmd = f"{request_data['command']} {request_data['args'][0]} {request_data['args'][1]}"
-                    await app.send_message(BOT_A_CHAT_ID, cmd)
-                    logger.info(f"📤 Request sent: {cmd}")
-                    
-                    # Simpan kembali
-                    r.setex(request_id, 300, json.dumps(request_data))
+                    if request_data_json:
+                        request_data = json.loads(request_data_json)
+                        
+                        # Kirim ke Bot A
+                        cmd = f"{request_data['command']} {request_data['args'][0]} {request_data['args'][1]}"
+                        logger.info(f"📤 Sending to Bot A: {cmd}")
+                        
+                        try:
+                            await app.send_message(BOT_A_CHAT_ID, cmd)
+                            logger.info(f"✅ Sent to Bot A: {cmd}")
+                            
+                            # Request tetap di queue sampai dapat response
+                            # Tidak perlu di-pop di sini
+                            
+                        except Exception as e:
+                            logger.error(f"❌ Failed to send to Bot A: {e}")
+                            
+                            # Kalau error, tunggu sebentar
+                            if "PEER_ID_INVALID" in str(e):
+                                logger.warning("⏳ Bot A not ready, waiting 30 seconds...")
+                                await asyncio.sleep(30)
             
         except Exception as e:
             logger.error(f"❌ Queue processor error: {e}")
         
-        await asyncio.sleep(3)
+        await asyncio.sleep(5)
 
 # ==================== MAIN FUNCTION ====================
 
@@ -312,9 +361,16 @@ async def main():
         await app.start()
         logger.info("✅ Userbot started!")
         
-        # LANGSUNG JALANKAN QUEUE PROCESSOR
-        # TIDAK PERLU KIRIM /start KE BOT A
+        # Cek koneksi ke Bot A (tanpa kirim pesan)
+        try:
+            logger.info("🔍 Checking connection to Bot A...")
+            user = await app.get_users(BOT_A_CHAT_ID)
+            logger.info(f"✅ Bot A is accessible: {user.first_name}")
+        except Exception as e:
+            logger.warning(f"⚠️ Bot A not accessible yet: {e}")
+            logger.info("⏳ Will try to send messages anyway...")
         
+        # Jalankan queue processor
         await process_queue()
         
     except Exception as e:
