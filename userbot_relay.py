@@ -10,6 +10,7 @@ import json
 import requests
 import base64
 import aiohttp
+import pytesseract
 from PIL import Image
 
 # Setup logging
@@ -291,12 +292,55 @@ except Exception as e:
     logger.error(f"❌ Redis connection failed: {e}")
     exit(1)
 
-# Telethon Client
+# Telethon Client - LANGSUNG JALAN TANPA /start
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 bot_status = {'in_captcha': False}
 sent_requests = {}
 waiting_for_result = {}
+
+# ==================== FUNGSI OCR UNTUK CAPTCHA ====================
+
+async def read_captcha_from_photo(message):
+    """Baca angka 6 digit dari foto captcha"""
+    try:
+        logger.info("📸 OCR: Downloading captcha photo...")
+        
+        # Download foto
+        photo_path = await message.download_media()
+        logger.info(f"✅ Photo downloaded: {photo_path}")
+        
+        # Buka dengan PIL
+        img = Image.open(photo_path)
+        
+        # Convert ke grayscale
+        img = img.convert('L')
+        
+        # Threshold sederhana
+        img = img.point(lambda p: p > 200 and 255)
+        
+        # OCR dengan Tesseract (khusus angka)
+        custom_config = r'--oem 3 --psm 8 -c tessedit_char_whitelist=0123456789'
+        text = pytesseract.image_to_string(img, config=custom_config)
+        
+        # Hapus file
+        os.remove(photo_path)
+        
+        # Ambil 6 digit
+        text = re.sub(r'[^0-9]', '', text)
+        match = re.search(r'(\d{6})', text)
+        
+        if match:
+            code = match.group(1)
+            logger.info(f"✅ OCR success: {code}")
+            return code
+        
+        logger.warning("❌ OCR failed: no 6-digit number found")
+        return None
+        
+    except Exception as e:
+        logger.error(f"❌ OCR error: {e}")
+        return None
 
 # ==================== FUNGSI VALIDASI GOPAY ====================
 
@@ -421,7 +465,7 @@ async def retry_pending_requests():
 @events.register(events.NewMessage)
 async def message_handler(event):
     """
-    Handler untuk semua pesan baru
+    Handler untuk semua pesan baru - LANGSUNG KERJA TANPA /start
     """
     message = event.message
     chat_id = event.chat_id
@@ -536,19 +580,21 @@ async def message_handler(event):
         logger.info("📸 PHOTO DETECTED - Captcha")
         is_captcha = True
         
-        # SET STATE
+        # SET STATE untuk user yang menunggu
         top_request = r.lindex('pending_requests', 0)
         if top_request:
             top_req_id = top_request.decode('utf-8')
             top_req_data = json.loads(r.get(top_req_id))
             waiting_user = top_req_data['chat_id']
             waiting_for_result[waiting_user] = True
+            logger.info(f"📋 Waiting for user {waiting_user}")
         
         # Cek angka di caption
         if text:
             digits = re.findall(r'\d', text)
             if len(digits) >= 6:
                 captcha_code = ''.join(digits[:6])
+                logger.info(f"✅ Found code in caption: {captcha_code}")
     
     # Cek 2: Teks mengandung angka 6 digit + kata kunci
     if not is_captcha and text:
@@ -558,6 +604,7 @@ async def message_handler(event):
             if any(kw in text.lower() for kw in keywords):
                 is_captcha = True
                 captcha_code = ''.join(digits[:6])
+                logger.info(f"✅ Found code in text: {captcha_code}")
                 
                 top_request = r.lindex('pending_requests', 0)
                 if top_request:
@@ -565,10 +612,16 @@ async def message_handler(event):
                     top_req_data = json.loads(r.get(top_req_id))
                     waiting_user = top_req_data['chat_id']
                     waiting_for_result[waiting_user] = True
+                    logger.info(f"📋 Waiting for user {waiting_user}")
     
     # ===== JIKA CAPTCHA =====
     if is_captcha:
         logger.warning("🚫 CAPTCHA PROCESSING...")
+        
+        # Jika captcha_code belum ada, pakai OCR
+        if not captcha_code and message.photo:
+            logger.info("🔍 Mencoba OCR...")
+            captcha_code = await read_captcha_from_photo(message)
         
         if captcha_code and len(captcha_code) == 6:
             logger.info(f"✅✅✅ CAPTCHA CODE: {captcha_code}")
@@ -579,6 +632,7 @@ async def message_handler(event):
             
             await asyncio.sleep(2)
             bot_status['in_captcha'] = False
+            logger.info("✅ Captcha verified")
             
             await retry_pending_requests()
         else:
@@ -594,11 +648,13 @@ async def message_handler(event):
 
 @events.register(events.MessageEdited)
 async def message_edit_handler(event):
+    """Handler untuk pesan yang diedit"""
     logger.info(f"✏️ Message edited in chat {event.chat_id}")
 
 # ==================== QUEUE PROCESSOR ====================
 
 async def process_queue():
+    """Monitor queue dan kirim request ke Bot A"""
     logger.info("🔄 Queue processor started")
     
     while True:
@@ -632,7 +688,7 @@ async def process_queue():
                     
                     try:
                         await client.send_message(BOT_A_CHAT_ID, cmd)
-                        logger.info(f"📤 Sent to Bot A: {cmd}")
+                        logger.info(f"📤 Sent to Bot A: {cmd} for user {request_data['chat_id']}")
                         sent_requests[request_id] = current_time
                     except Exception as e:
                         logger.error(f"❌ Failed to send to Bot A: {e}")
@@ -648,7 +704,7 @@ async def main():
     sent_requests = {}
     waiting_for_result = {}
     
-    logger.info("🚀 Starting Telethon userbot...")
+    logger.info("🚀 Starting Telethon userbot (fresh start)...")
     
     try:
         await client.start()
@@ -656,6 +712,8 @@ async def main():
         
         me = await client.get_me()
         logger.info(f"✅ Logged in as: {me.first_name} (@{me.username})")
+        
+        # TANPA MENGIRIM /start KE BOT A - LANGSUNG KERJA
         
         client.add_event_handler(message_handler)
         client.add_event_handler(message_edit_handler)
