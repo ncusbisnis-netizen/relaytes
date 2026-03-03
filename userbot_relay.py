@@ -27,7 +27,7 @@ REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
 OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', '')
 STOK_ADMIN_URL = os.environ.get('STOK_ADMIN_URL', 'https://whatsapp.com/channel/0029VbA4PrD5fM5TMgECoE1E')
 
-# Country mapping sederhana
+# Country mapping LURUS (simple)
 country_mapping = {
     'AF': '🇦🇫 Afghanistan',
   'AX': '🇦🇽 Åland Islands',
@@ -335,7 +335,8 @@ def validate_mlbb_gopay_sync(user_id, server_id):
         
         logger.info(f"📥 Response status: {response.status_code}")
         
-        if response.status_code != 200:
+        # TERIMA 200 ATAU 201 (Created)
+        if response.status_code not in [200, 201]:
             logger.error(f"❌ HTTP Error {response.status_code}")
             return {
                 'status': False,
@@ -430,29 +431,47 @@ def cleanup_downloaded_photos():
         except:
             pass
 
-# ==================== FORMAT OUTPUT DENGAN TOMBOL ====================
+# ==================== FORMAT OUTPUT PERSIS SEPERTI CONTOH ====================
 
 def format_final_output(original_text, nickname, region, uid, sid, android, ios):
-    """Format output final dengan tombol Stok Admin"""
+    """Format output final PERSIS seperti contoh"""
     
-    # Ambil bind info (hanya yang tidak empty)
+    # Ambil semua bind info dari text asli
     bind_lines = []
     lines = original_text.split('\n')
     
-    keywords = ['Moonton', 'Google Play', 'Facebook', 'Tiktok', 'VK', 'Apple', 'GCID', 'Telegram', 'WhatsApp']
+    keywords = ['Moonton', 'VK', 'Google Play', 'Tiktok', 'Facebook', 'Apple', 'GCID', 'Telegram', 'WhatsApp']
     
     for line in lines:
         for kw in keywords:
-            if kw in line and 'empty' not in line.lower():
+            if kw in line:
+                # Bersihin format
                 clean_line = line.replace('✧', '•').strip()
                 clean_line = re.sub(r'\s+', ' ', clean_line)
+                # Pastikan ada spasi setelah titik dua
+                if ':' in clean_line:
+                    parts = clean_line.split(':', 1)
+                    clean_line = f"{parts[0].strip()}: {parts[1].strip()}"
                 bind_lines.append(clean_line)
                 break
     
-    bind_info = '\n'.join(bind_lines) if bind_lines else '• Tidak ada data bind'
+    # Format BIND INFO dengan urutan tetap
+    bind_info = []
+    for kw in keywords:
+        found = False
+        for line in bind_lines:
+            if kw in line:
+                bind_info.append(line)
+                found = True
+                break
+        if not found:
+            bind_info.append(f"• {kw} : empty.")
     
-    # Format teks
-    text = f"""INFORMASI AKUN
+    # Gabungkan bind info
+    bind_text = '\n'.join(bind_info)
+    
+    # Format final PERSIS seperti contoh
+    final = f"""INFORMASI AKUN
 
 ID: {uid}
 Server: {sid}
@@ -460,7 +479,7 @@ Nickname: {nickname}
 Region: {region}
 
 BIND INFO:
-{bind_info}
+{bind_text}
 
 Device Login:
 • Android: {android} perangkat
@@ -473,7 +492,7 @@ Device Login:
         ]
     }
     
-    return text, reply_markup
+    return final, reply_markup
 
 # ==================== SEND TO BOT B ====================
 
@@ -494,7 +513,9 @@ async def send_to_bot_b(user_id, text, reply_markup=None):
         if response.status_code == 200:
             logger.info(f"✅ TERKIRIM KE USER {user_id}")
             return True
-        return False
+        else:
+            logger.error(f"❌ Gagal kirim: {response.status_code} - {response.text}")
+            return False
     except Exception as e:
         logger.error(f"❌ Gagal kirim: {e}")
         return False
@@ -558,8 +579,9 @@ async def message_handler(event):
             else:
                 nickname = 'Tidak diketahui'
                 region = '🌍 Tidak diketahui'
+                logger.warning(f"⚠️ GoPay error: {gopay.get('message')}")
             
-            # Format dan kirim
+            # Format dan kirim PERSIS seperti contoh
             output, markup = format_final_output(text, nickname, region, uid, sid, android, ios)
             await send_to_bot_b(target_user, output, markup)
             
@@ -634,10 +656,10 @@ async def message_handler(event):
             await asyncio.sleep(5)
             bot_status['in_captcha'] = False
             
-            # TIDAK RETRY! Langsung tunggu hasil
-            logger.info("⏳ Menunggu hasil...")
+            # JANGAN RETRY! Langsung tunggu hasil
+            logger.info("⏳ Menunggu hasil dari Bot A...")
         else:
-            logger.error("❌ Gagal dapat code")
+            logger.error("❌ Gagal dapat code captcha")
             cleanup_downloaded_photos()
             await asyncio.sleep(30)
             bot_status['in_captcha'] = False
@@ -687,6 +709,7 @@ async def process_queue():
 
 async def main():
     logger.info("🚀 Starting Telethon userbot...")
+    logger.info(f"Stok Admin URL: {STOK_ADMIN_URL}")
     
     try:
         await client.start()
