@@ -304,65 +304,112 @@ waiting_for_result = {}
 # ==================== FUNGSI VALIDASI GOPAY ====================
 
 def validate_mlbb_gopay_sync(user_id, server_id):
-    """Validasi akun MLBB menggunakan API GoPay"""
+    """Validasi akun MLBB menggunakan API GoPay - TIMEOUT 30 DETIK"""
     url = 'https://gopay.co.id/games/v1/order/user-account'
     
+    # Headers PERSIS seperti di JavaScript
     headers = {
         'Content-Type': 'application/json',
         'X-Client': 'web-mobile',
-        'X-Timestamp': str(int(time.time() * 1000)),
+        'X-Timestamp': str(int(time.time() * 1000)),  # Milidetik!
         'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36'
     }
     
+    # Body PERSIS seperti di JavaScript
     body = {
         "code": "MOBILE_LEGENDS",
         "data": {
-            "userId": str(user_id),
-            "zoneId": str(server_id)
+            "userId": str(user_id).strip(),
+            "zoneId": str(server_id).strip()
         }
     }
     
     try:
-        response = requests.post(url, headers=headers, json=body, timeout=10)
+        logger.info(f"📤 GoPay Request: {user_id}:{server_id}")
         
-        if response.status_code == 200:
+        # TIMEOUT 30 DETIK!
+        response = requests.post(
+            url, 
+            headers=headers, 
+            json=body,
+            timeout=30
+        )
+        
+        logger.info(f"📥 Response status: {response.status_code}")
+        
+        if response.status_code != 200:
+            logger.error(f"❌ HTTP Error {response.status_code}: {response.text[:200]}")
+            return {
+                'status': False,
+                'creator': 'AntiDEV',
+                'message': f'HTTP {response.status_code}'
+            }
+        
+        # Parse JSON
+        try:
             result = response.json()
-            
-            if result and result.get('data'):
-                v = result['data']
-                
-                # Proses username
-                username = v.get('username', 'Unknown')
-                username = username.replace('+', ' ')
-                
-                # Proses region
-                country = v.get('countryOrigin', 'ID').upper()
-                region = country_mapping.get(country, f'🌍 {country}')
-                
-                return {
-                    'status': True,
-                    'creator': 'AntiDEV',
-                    'result': {
-                        'userId': user_id,
-                        'serverId': server_id,
-                        'username': username,
-                        'region': region
-                    }
-                }
+        except:
+            logger.error(f"❌ Invalid JSON response: {response.text[:200]}")
+            return {
+                'status': False,
+                'creator': 'AntiDEV',
+                'message': 'Invalid JSON response'
+            }
+        
+        # Cek struktur response
+        if not result:
+            logger.error("❌ Empty response")
+            return {'status': False, 'creator': 'AntiDEV', 'message': 'Empty response'}
+        
+        if not isinstance(result, dict):
+            logger.error(f"❌ Response is not dict: {type(result)}")
+            return {'status': False, 'creator': 'AntiDEV', 'message': 'Invalid response type'}
+        
+        # Cek apakah ada field 'data'
+        if 'data' not in result:
+            logger.error(f"❌ No 'data' field in response. Keys: {list(result.keys())}")
+            logger.error(f"Response: {json.dumps(result)[:500]}")
+            return {'status': False, 'creator': 'AntiDEV', 'message': 'No data field'}
+        
+        data = result['data']
+        if not data:
+            logger.error("❌ 'data' field is empty")
+            return {'status': False, 'creator': 'AntiDEV', 'message': 'Empty data'}
+        
+        # Ambil data yang diperlukan
+        username = data.get('username', 'Unknown')
+        if username:
+            username = username.replace('+', ' ')
+        
+        country = data.get('countryOrigin', 'ID')
+        if country:
+            country = country.upper()
+        
+        # Mapping region
+        region = country_mapping.get(country, f'🌍 {country}')
+        
+        logger.info(f"✅ GoPay SUCCESS: {username} - {region}")
         
         return {
-            'status': False,
+            'status': True,
             'creator': 'AntiDEV',
-            'message': 'Invalid UserId or ServerId'
+            'result': {
+                'userId': user_id,
+                'serverId': server_id,
+                'username': username,
+                'region': region
+            }
         }
         
+    except requests.exceptions.Timeout:
+        logger.error("❌❌❌ REQUEST TIMEOUT! (30 detik)")
+        return {'status': False, 'creator': 'AntiDEV', 'message': 'Request timeout (30s)'}
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"❌ Connection error: {e}")
+        return {'status': False, 'creator': 'AntiDEV', 'message': 'Connection error'}
     except Exception as e:
-        logger.error(f"❌ GoPay API error: {e}")
-        return {
-            'status': False,
-            'creator': 'AntiDEV',
-            'message': str(e)
-        }
+        logger.error(f"❌ Unexpected error: {e}")
+        return {'status': False, 'creator': 'AntiDEV', 'message': str(e)}
 
 # ==================== OCR ONLINE FUNCTION ====================
 
@@ -687,7 +734,9 @@ async def message_handler(event):
             await client.send_message(BOT_A_USERNAME, f"/verify {captcha_code}")
             logger.info(f"📤 Verification sent: /verify {captcha_code}")
             
-            await asyncio.sleep(2)
+            # JEDA 5 DETIK SETELAH VERIFY (sesuai permintaan)
+            await asyncio.sleep(5)
+            
             bot_status['in_captcha'] = False
             
             await retry_pending_requests()
