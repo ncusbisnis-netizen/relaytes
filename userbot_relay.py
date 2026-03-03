@@ -337,7 +337,7 @@ def validate_mlbb_gopay_sync(user_id, server_id):
         
         logger.info(f"📥 Response status: {response.status_code}")
         
-        if response.status_code != 200:
+        if response.status_code not in [200, 201]:
             logger.error(f"❌ HTTP Error {response.status_code}: {response.text[:200]}")
             return {
                 'status': False,
