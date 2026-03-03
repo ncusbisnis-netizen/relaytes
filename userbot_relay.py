@@ -23,21 +23,262 @@ API_ID = int(os.environ.get('API_ID', 0))
 API_HASH = os.environ.get('API_HASH', '')
 SESSION_STRING = os.environ.get('SESSION_STRING', '')
 BOT_B_TOKEN = os.environ.get('BOT_B_TOKEN', '')
-BOT_A_CHAT_ID = int(os.environ.get('BOT_A_CHAT_ID', 0))
+BOT_A_USERNAME = 'bengkelmlbb_bot'  # PAKAI USERNAME, BUKAN ID
 REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
 OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', '')
 
 # Country mapping (5 negara)
 country_mapping = {
-    'ID': '🇮🇩 Indonesia',
-    'MY': '🇲🇾 Malaysia',
-    'SG': '🇸🇬 Singapore',
-    'PH': '🇵🇭 Philippines',
-    'TH': '🇹🇭 Thailand'
+    'AF': '🇦🇫 Afghanistan',
+  'AX': '🇦🇽 Åland Islands',
+  'AL': '🇦🇱 Albania',
+  'DZ': '🇩🇿 Algeria',
+  'AS': '🇦🇸 American Samoa',
+  'AD': '🇦🇩 Andorra',
+  'AO': '🇦🇴 Angola',
+  'AI': '🇦🇮 Anguilla',
+  'AQ': '🇦🇶 Antarctica',
+  'AG': '🇦🇬 Antigua and Barbuda',
+  'AR': '🇦🇷 Argentina',
+  'AM': '🇦🇲 Armenia',
+  'AW': '🇦🇼 Aruba',
+  'AU': '🇦🇺 Australia',
+  'AT': '🇦🇹 Austria',
+  'AZ': '🇦🇿 Azerbaijan',
+  'BS': '🇧🇸 Bahamas',
+  'BH': '🇧🇭 Bahrain',
+  'BD': '🇧🇩 Bangladesh',
+  'BB': '🇧🇧 Barbados',
+  'BY': '🇧🇾 Belarus',
+  'BE': '🇧🇪 Belgium',
+  'BZ': '🇧🇿 Belize',
+  'BJ': '🇧🇯 Benin',
+  'BM': '🇧🇲 Bermuda',
+  'BT': '🇧🇹 Bhutan',
+  'BO': '🇧🇴 Bolivia, Plurinational State of bolivia',
+  'BA': '🇧🇦 Bosnia and Herzegovina',
+  'BW': '🇧🇼 Botswana',
+  'BV': '🇧🇻 Bouvet Island',
+  'BR': '🇧🇷 Brazil',
+  'IO': '🇮🇴 British Indian Ocean Territory',
+  'BN': '🇧🇳 Brunei Darussalam',
+  'BG': '🇧🇬 Bulgaria',
+  'BF': '🇧🇫 Burkina Faso',
+  'BI': '🇧🇮 Burundi',
+  'KH': '🇰🇭 Cambodia',
+  'CM': '🇨🇲 Cameroon',
+  'CA': '🇨🇦 Canada',
+  'CV': '🇨🇻 Cape Verde',
+  'KY': '🇰🇾 Cayman Islands',
+  'CF': '🇨🇫 Central African Republic',
+  'TD': '🇹🇩 Chad',
+  'CL': '🇨🇱 Chile',
+  'CN': '🇨🇳 China',
+  'CX': '🇨🇽 Christmas Island',
+  'CC': '🇨🇨 Cocos (Keeling) Islands',
+  'CO': '🇨🇴 Colombia',
+  'KM': '🇰🇲 Comoros',
+  'CG': '🇨🇬 Congo',
+  'CD': '🇨🇩 Congo, The Democratic Republic of the Congo',
+  'CK': '🇨🇰 Cook Islands',
+  'CR': '🇨🇷 Costa Rica',
+  'CI': "🇨🇮 Cote d'Ivoire",
+  'HR': '🇭🇷 Croatia',
+  'CU': '🇨🇺 Cuba',
+  'CY': '🇨🇾 Cyprus',
+  'CZ': '🇨🇿 Czech Republic',
+  'DK': '🇩🇰 Denmark',
+  'DJ': '🇩🇯 Djibouti',
+  'DM': '🇩🇲 Dominica',
+  'DO': '🇩🇴 Dominican Republic',
+  'EC': '🇪🇨 Ecuador',
+  'EG': '🇪🇬 Egypt',
+  'SV': '🇸🇻 El Salvador',
+  'GQ': '🇬🇶 Equatorial Guinea',
+  'ER': '🇪🇷 Eritrea',
+  'EE': '🇪🇪 Estonia',
+  'ET': '🇪🇹 Ethiopia',
+  'FK': '🇫🇰 Falkland Islands (Malvinas)',
+  'FO': '🇫🇴 Faroe Islands',
+  'FJ': '🇫🇯 Fiji',
+  'FI': '🇫🇮 Finland',
+  'FR': '🇫🇷 France',
+  'GF': '🇬🇫 French Guiana',
+  'PF': '🇵🇫 French Polynesia',
+  'TF': '🇹🇫 French Southern Territories',
+  'GA': '🇬🇦 Gabon',
+  'GM': '🇬🇲 Gambia',
+  'GE': '🇬🇪 Georgia',
+  'DE': '🇩🇪 Germany',
+  'GH': '🇬🇭 Ghana',
+  'GI': '🇬🇮 Gibraltar',
+  'GR': '🇬🇷 Greece',
+  'GL': '🇬🇱 Greenland',
+  'GD': '🇬🇩 Grenada',
+  'GP': '🇬🇵 Guadeloupe',
+  'GU': '🇬🇺 Guam',
+  'GT': '🇬🇹 Guatemala',
+  'GG': '🇬🇬 Guernsey',
+  'GN': '🇬🇳 Guinea',
+  'GW': '🇬🇼 Guinea-Bissau',
+  'GY': '🇬🇾 Guyana',
+  'HT': '🇭🇹 Haiti',
+  'HM': '🇭🇲 Heard Island and Mcdonald Islands',
+  'VA': '🇻🇦 Holy See (Vatican City State)',
+  'HN': '🇭🇳 Honduras',
+  'HK': '🇭🇰 Hong Kong',
+  'HU': '🇭🇺 Hungary',
+  'IS': '🇮🇸 Iceland',
+  'IN': '🇮🇳 India',
+  'ID': '🇮🇩 Indonesia',
+  'IR': '🇮🇷 Iran, Islamic Republic of Persian Gulf',
+  'IQ': '🇮🇶 Iraq',
+  'IE': '🇮🇪 Ireland',
+  'IM': '🇮🇲 Isle of Man',
+  'IL': '🇮🇱 Israel',
+  'IT': '🇮🇹 Italy',
+  'JM': '🇯🇲 Jamaica',
+  'JP': '🇯🇵 Japan',
+  'JE': '🇯🇪 Jersey',
+  'JO': '🇯🇴 Jordan',
+  'KZ': '🇰🇿 Kazakhstan',
+  'KE': '🇰🇪 Kenya',
+  'KI': '🇰🇮 Kiribati',
+  'KP': "🇰🇵 Korea, Democratic People's Republic of Korea",
+  'KR': '🇰🇷 Korea, Republic of South Korea',
+  'XK': '🇽🇰 Kosovo',
+  'KW': '🇰🇼 Kuwait',
+  'KG': '🇰🇬 Kyrgyzstan',
+  'LA': '🇱🇦 Laos',
+  'LV': '🇱🇻 Latvia',
+  'LB': '🇱🇧 Lebanon',
+  'LS': '🇱🇸 Lesotho',
+  'LR': '🇱🇷 Liberia',
+  'LY': '🇱🇾 Libyan Arab Jamahiriya',
+  'LI': '🇱🇮 Liechtenstein',
+  'LT': '🇱🇹 Lithuania',
+  'LU': '🇱🇺 Luxembourg',
+  'MO': '🇲🇴 Macao',
+  'MK': '🇲🇰 Macedonia',
+  'MG': '🇲🇬 Madagascar',
+  'MW': '🇲🇼 Malawi',
+  'MY': '🇲🇾 Malaysia',
+  'MV': '🇲🇻 Maldives',
+  'ML': '🇲🇱 Mali',
+  'MT': '🇲🇹 Malta',
+  'MH': '🇲🇭 Marshall Islands',
+  'MQ': '🇲🇶 Martinique',
+  'MR': '🇲🇷 Mauritania',
+  'MU': '🇲🇺 Mauritius',
+  'YT': '🇾🇹 Mayotte',
+  'MX': '🇲🇽 Mexico',
+  'FM': '🇫🇲 Micronesia, Federated States of Micronesia',
+  'MD': '🇲🇩 Moldova',
+  'MC': '🇲🇨 Monaco',
+  'MN': '🇲🇳 Mongolia',
+  'ME': '🇲🇪 Montenegro',
+  'MS': '🇲🇸 Montserrat',
+  'MA': '🇲🇦 Morocco',
+  'MZ': '🇲🇿 Mozambique',
+  'MM': '🇲🇲 Myanmar',
+  'NA': '🇳🇦 Namibia',
+  'NR': '🇳🇷 Nauru',
+  'NP': '🇳🇵 Nepal',
+  'NL': '🇳🇱 Netherlands',
+  'AN': 'Netherlands Antilles',
+  'NC': '🇳🇨 New Caledonia',
+  'NZ': '🇳🇿 New Zealand',
+  'NI': '🇳🇮 Nicaragua',
+  'NE': '🇳🇪 Niger',
+  'NG': '🇳🇬 Nigeria',
+  'NU': '🇳🇺 Niue',
+  'NF': '🇳🇫 Norfolk Island',
+  'MP': '🇲🇵 Northern Mariana Islands',
+  'NO': '🇳🇴 Norway',
+  'OM': '🇴🇲 Oman',
+  'PK': '🇵🇰 Pakistan',
+  'PW': '🇵🇼 Palau',
+  'PS': '🇵🇸 Palestinian Territory, Occupied',
+  'PA': '🇵🇦 Panama',
+  'PG': '🇵🇬 Papua New Guinea',
+  'PY': '🇵🇾 Paraguay',
+  'PE': '🇵🇪 Peru',
+  'PH': '🇵🇭 Philippines',
+  'PN': '🇵🇳 Pitcairn',
+  'PL': '🇵🇱 Poland',
+  'PT': '🇵🇹 Portugal',
+  'PR': '🇵🇷 Puerto Rico',
+  'QA': '🇶🇦 Qatar',
+  'RO': '🇷🇴 Romania',
+  'RU': '🇷🇺 Russia',
+  'RW': '🇷🇼 Rwanda',
+  'RE': '🇷🇪 Reunion',
+  'BL': '🇧🇱 Saint Barthelemy',
+  'SH': '🇸🇭 Saint Helena, Ascension and Tristan Da Cunha',
+  'KN': '🇰🇳 Saint Kitts and Nevis',
+  'LC': '🇱🇨 Saint Lucia',
+  'MF': '🇲🇫 Saint Martin',
+  'PM': '🇵🇲 Saint Pierre and Miquelon',
+  'VC': '🇻🇨 Saint Vincent and the Grenadines',
+  'WS': '🇼🇸 Samoa',
+  'SM': '🇸🇲 San Marino',
+  'ST': '🇸🇹 Sao Tome and Principe',
+  'SA': '🇸🇦 Saudi Arabia',
+  'SN': '🇸🇳 Senegal',
+  'RS': '🇷🇸 Serbia',
+  'SC': '🇸🇨 Seychelles',
+  'SL': '🇸🇱 Sierra Leone',
+  'SG': '🇸🇬 Singapore',
+  'SK': '🇸🇰 Slovakia',
+  'SI': '🇸🇮 Slovenia',
+  'SB': '🇸🇧 Solomon Islands',
+  'SO': '🇸🇴 Somalia',
+  'ZA': '🇿🇦 South Africa',
+  'SS': '🇸🇸 South Sudan',
+  'GS': '🇬🇸 South Georgia and the South Sandwich Islands',
+  'ES': '🇪🇸 Spain',
+  'LK': '🇱🇰 Sri Lanka',
+  'SD': '🇸🇩 Sudan',
+  'SR': '🇸🇷 Suriname',
+  'SJ': '🇸🇯 Svalbard and Jan Mayen',
+  'SZ': '🇸🇿 Eswatini',
+  'SE': '🇸🇪 Sweden',
+  'CH': '🇨🇭 Switzerland',
+  'SY': '🇸🇾 Syrian Arab Republic',
+  'TW': '🇹🇼 Taiwan',
+  'TJ': '🇹🇯 Tajikistan',
+  'TZ': '🇹🇿 Tanzania, United Republic of Tanzania',
+  'TH': '🇹🇭 Thailand',
+  'TL': '🇹🇱 Timor-Leste',
+  'TG': '🇹🇬 Togo',
+  'TK': '🇹🇰 Tokelau',
+  'TO': '🇹🇴 Tonga',
+  'TT': '🇹🇹 Trinidad and Tobago',
+  'TN': '🇹🇳 Tunisia',
+  'TR': '🇹🇷 Turkey',
+  'TM': '🇹🇲 Turkmenistan',
+  'TC': '🇹🇨 Turks and Caicos Islands',
+  'TV': '🇹🇻 Tuvalu',
+  'UG': '🇺🇬 Uganda',
+  'UA': '🇺🇦 Ukraine',
+  'AE': '🇦🇪 United Arab Emirates',
+  'GB': '🇬🇧 United Kingdom',
+  'US': '🇺🇸 United States',
+  'UY': '🇺🇾 Uruguay',
+  'UZ': '🇺🇿 Uzbekistan',
+  'VU': '🇻🇺 Vanuatu',
+  'VE': '🇻🇪 Venezuela, Bolivarian Republic of Venezuela',
+  'VN': '🇻🇳 Vietnam',
+  'VG': '🇻🇬 Virgin Islands, British',
+  'VI': '🇻🇮 Virgin Islands, U.S.',
+  'WF': '🇼🇫 Wallis and Futuna',
+  'YE': '🇾🇪 Yemen',
+  'ZM': '🇿🇲 Zambia',
+  'ZW': '🇿🇼 Zimbabwe'
 }
 
 # Validasi environment
-if not all([API_ID, API_HASH, SESSION_STRING, BOT_B_TOKEN, BOT_A_CHAT_ID, REDIS_URL]):
+if not all([API_ID, API_HASH, SESSION_STRING, BOT_B_TOKEN, REDIS_URL]):
     logger.error("❌ Missing required environment variables!")
     exit(1)
 
@@ -60,10 +301,10 @@ bot_status = {'in_captcha': False}
 sent_requests = {}
 waiting_for_result = {}
 
-# ==================== FUNGSI VALIDASI GOPAY DENGAN DEBUG LENGKAP ====================
+# ==================== FUNGSI VALIDASI GOPAY ====================
 
 def validate_mlbb_gopay_sync(user_id, server_id):
-    """Validasi akun MLBB menggunakan API GoPay - VERSI DEBUG LENGKAP"""
+    """Validasi akun MLBB menggunakan API GoPay"""
     url = 'https://gopay.co.id/games/v1/order/user-account'
     
     headers = {
@@ -81,105 +322,47 @@ def validate_mlbb_gopay_sync(user_id, server_id):
         }
     }
     
-    logger.info("=" * 60)
-    logger.info("🔍🔍🔍 GOPAY DEBUG - REQUEST DETAIL 🔍🔍🔍")
-    logger.info(f"⏰ Timestamp: {headers['X-Timestamp']}")
-    logger.info(f"📤 URL: {url}")
-    logger.info(f"📤 Headers: {json.dumps(headers, indent=2)}")
-    logger.info(f"📤 Body: {json.dumps(body, indent=2)}")
-    logger.info("=" * 60)
-    
     try:
-        # Kirim request
-        start_time = time.time()
         response = requests.post(url, headers=headers, json=body, timeout=10)
-        elapsed = time.time() - start_time
         
-        logger.info("=" * 60)
-        logger.info("📥 GOPAY DEBUG - RESPONSE DETAIL 📥")
-        logger.info(f"⏱️ Response time: {elapsed:.2f} detik")
-        logger.info(f"📥 Status Code: {response.status_code}")
-        logger.info(f"📥 Headers: {dict(response.headers)}")
-        
-        # Coba parse response
-        try:
+        if response.status_code == 200:
             result = response.json()
-            logger.info(f"📥 Response JSON (pretty):")
-            logger.info(json.dumps(result, indent=2))
-        except:
-            logger.error(f"❌ Response BUKAN JSON!")
-            logger.error(f"❌ Response text: {response.text[:500]}")
-            return {
-                'status': False,
-                'creator': 'AntiDEV',
-                'message': 'Response not JSON'
-            }
-        
-        # Cek struktur response
-        if not result:
-            logger.error("❌ Response kosong!")
-            return {'status': False, 'creator': 'AntiDEV', 'message': 'Empty response'}
-        
-        if not isinstance(result, dict):
-            logger.error(f"❌ Response bukan dictionary, tapi: {type(result)}")
-            return {'status': False, 'creator': 'AntiDEV', 'message': 'Invalid response type'}
-        
-        logger.info(f"📋 Keys dalam response: {list(result.keys())}")
-        
-        if 'data' not in result:
-            logger.error(f"❌ Key 'data' tidak ditemukan!")
-            logger.error(f"❌ Response keys: {list(result.keys())}")
-            return {'status': False, 'creator': 'AntiDEV', 'message': 'No data field'}
-        
-        if not result['data']:
-            logger.error("❌ Value 'data' kosong!")
-            return {'status': False, 'creator': 'AntiDEV', 'message': 'Empty data field'}
-        
-        # Data ditemukan!
-        v = result['data']
-        logger.info("✅✅✅ DATA DITEMUKAN! ✅✅✅")
-        logger.info(f"📊 Data keys: {list(v.keys())}")
-        logger.info(f"📊 Username: {v.get('username')}")
-        logger.info(f"📊 CountryOrigin: {v.get('countryOrigin')}")
-        logger.info(f"📊 UserID: {v.get('userId')}")
-        logger.info(f"📊 ZoneID: {v.get('zoneId')}")
-        
-        # Proses username
-        username = v.get('username', 'Unknown')
-        username = username.replace('+', ' ')
-        
-        # Proses region
-        country = v.get('countryOrigin', 'ID')
-        if country:
-            country = country.upper()
-        region = country_mapping.get(country, f'🌍 {country}')
-        
-        logger.info(f"✅ Final username: {username}")
-        logger.info(f"✅ Final region: {region}")
-        
-        logger.info("=" * 60)
+            
+            if result and result.get('data'):
+                v = result['data']
+                
+                # Proses username
+                username = v.get('username', 'Unknown')
+                username = username.replace('+', ' ')
+                
+                # Proses region
+                country = v.get('countryOrigin', 'ID').upper()
+                region = country_mapping.get(country, f'🌍 {country}')
+                
+                return {
+                    'status': True,
+                    'creator': 'AntiDEV',
+                    'result': {
+                        'userId': user_id,
+                        'serverId': server_id,
+                        'username': username,
+                        'region': region
+                    }
+                }
         
         return {
-            'status': True,
+            'status': False,
             'creator': 'AntiDEV',
-            'result': {
-                'userId': user_id,
-                'serverId': server_id,
-                'username': username,
-                'region': region
-            }
+            'message': 'Invalid UserId or ServerId'
         }
         
-    except requests.exceptions.Timeout:
-        logger.error("❌❌❌ TIMEOUT: Request ke GoPay timeout")
-        return {'status': False, 'creator': 'AntiDEV', 'message': 'Request timeout'}
-    except requests.exceptions.ConnectionError as e:
-        logger.error(f"❌❌❌ CONNECTION ERROR: {e}")
-        return {'status': False, 'creator': 'AntiDEV', 'message': f'Connection error: {e}'}
     except Exception as e:
-        logger.error(f"❌❌❌ UNEXPECTED ERROR: {e}")
-        logger.exception(e)
-        return {'status': False, 'creator': 'AntiDEV', 'message': str(e)}
+        logger.error(f"❌ GoPay API error: {e}")
+        return {
+            'status': False,
+            'creator': 'AntiDEV',
+            'message': str(e)
+        }
 
 # ==================== OCR ONLINE FUNCTION ====================
 
@@ -311,7 +494,8 @@ async def retry_pending_requests():
         request_data = json.loads(request_data_json)
         cmd = f"{request_data['command']} {request_data['args'][0]} {request_data['args'][1]}"
         
-        await client.send_message(BOT_A_CHAT_ID, cmd)
+        # PAKAI USERNAME, BUKAN ID
+        await client.send_message(BOT_A_USERNAME, cmd)
         logger.info(f"🔄 Retry: {cmd} for user {request_data['chat_id']}")
         
         r.setex(request_id, 300, json.dumps(request_data))
@@ -345,8 +529,8 @@ async def message_handler(event):
     logger.info(f"📸 Has Photo: {bool(message.photo)}")
     logger.info(f"📝 Text preview: '{text[:100]}'")
     
-    # CEK APAKAH DARI BOT A
-    if chat_id != BOT_A_CHAT_ID and sender_id != BOT_A_CHAT_ID:
+    # CEK APAKAH DARI BOT A (gunakan ID)
+    if chat_id != 7240340418 and sender_id != 7240340418:
         logger.info("❌ Bukan dari Bot A")
         logger.info("=" * 80)
         return
@@ -385,18 +569,17 @@ async def message_handler(event):
             android = android_match.group(1) if android_match else '0'
             ios = ios_match.group(1) if ios_match else '0'
             
-            # Panggil API GoPay dengan DEBUG
-            logger.info("🔍 Memanggil validate_mlbb_gopay_sync...")
+            # Panggil API GoPay
             gopay_result = validate_mlbb_gopay_sync(uid, sid)
             
             if gopay_result['status']:
                 nickname = gopay_result['result']['username']
                 region = gopay_result['result']['region']
-                logger.info(f"✅ GoPay BERHASIL: {nickname} - {region}")
+                logger.info(f"✅ GoPay: {nickname} - {region}")
             else:
                 nickname = 'Tidak diketahui'
                 region = '🌍 Tidak diketahui'
-                logger.error(f"❌ GoPay GAGAL: {gopay_result.get('message', 'Unknown error')}")
+                logger.warning(f"⚠️ GoPay: {gopay_result.get('message')}")
             
             # Format output final
             final_output = format_final_output(text, nickname, region, uid, sid, android, ios)
@@ -500,7 +683,8 @@ async def message_handler(event):
             logger.info(f"✅✅✅ CAPTCHA CODE: {captcha_code}")
             bot_status['in_captcha'] = True
             
-            await client.send_message(BOT_A_CHAT_ID, f"/verify {captcha_code}")
+            # PAKAI USERNAME UNTUK VERIFY
+            await client.send_message(BOT_A_USERNAME, f"/verify {captcha_code}")
             logger.info(f"📤 Verification sent: /verify {captcha_code}")
             
             await asyncio.sleep(2)
@@ -557,7 +741,8 @@ async def process_queue():
                     cmd = f"{request_data['command']} {request_data['args'][0]} {request_data['args'][1]}"
                     
                     try:
-                        await client.send_message(BOT_A_CHAT_ID, cmd)
+                        # PAKAI USERNAME, BUKAN ID - LANGSUNG KERJA TANPA PERLU CHAT DULUAN
+                        await client.send_message(BOT_A_USERNAME, cmd)
                         logger.info(f"📤 Sent to Bot A: {cmd}")
                         sent_requests[request_id] = current_time
                     except Exception as e:
@@ -583,14 +768,7 @@ async def main():
         me = await client.get_me()
         logger.info(f"✅ Logged in as: {me.first_name} (@{me.username})")
         
-        # PASTIKAN LIBRARY MENGENAL BOT A
-        try:
-            logger.info("🔍 Resolving Bot A entity...")
-            bot_entity = await client.get_entity('bengkelmlbb_bot')
-            logger.info(f"✅ Bot A entity found: {bot_entity.id} - {bot_entity.first_name}")
-        except Exception as e:
-            logger.warning(f"⚠️ Could not resolve Bot A: {e}")
-            logger.info("⏋ Bot A will be resolved when first message is sent")
+        # TIDAK PERLU RESOLVE ENTITY - LANGSUNG PAKAI USERNAME NANTI
         
         client.add_event_handler(message_handler)
         client.add_event_handler(message_edit_handler)
