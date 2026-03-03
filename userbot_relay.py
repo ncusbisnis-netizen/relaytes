@@ -27,7 +27,7 @@ REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
 OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', '')
 STOK_ADMIN_URL = os.environ.get('STOK_ADMIN_URL', 'https://whatsapp.com/channel/0029VbA4PrD5fM5TMgECoE1E')
 
-# Country mapping LURUS (simple)
+# Country mapping SEDERHANA dan LURUS
 country_mapping = {
     'AF': '🇦🇫 Afghanistan',
   'AX': '🇦🇽 Åland Islands',
@@ -335,7 +335,7 @@ def validate_mlbb_gopay_sync(user_id, server_id):
         
         logger.info(f"📥 Response status: {response.status_code}")
         
-        # TERIMA 200 ATAU 201 (Created)
+        # TERIMA 200 ATAU 201
         if response.status_code not in [200, 201]:
             logger.error(f"❌ HTTP Error {response.status_code}")
             return {
@@ -494,10 +494,10 @@ Device Login:
     
     return final, reply_markup
 
-# ==================== SEND TO BOT B ====================
+# ==================== SEND TO BOT B DENGAN AUTO CLEANUP ====================
 
 async def send_to_bot_b(user_id, text, reply_markup=None):
-    """Kirim pesan ke user via Bot B"""
+    """Kirim pesan ke user via Bot B dan bersihkan queue"""
     url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
     data = {
         'chat_id': user_id,
@@ -512,6 +512,36 @@ async def send_to_bot_b(user_id, text, reply_markup=None):
         response = requests.post(url, json=data, timeout=10)
         if response.status_code == 200:
             logger.info(f"✅ TERKIRIM KE USER {user_id}")
+            
+            # 🔥🔥🔥 HAPUS SEMUA QUEUE UNTUK USER INI 🔥🔥🔥
+            try:
+                # Cari semua request di queue untuk user ini
+                queue_len = r.llen('pending_requests')
+                requests_to_remove = []
+                
+                for i in range(queue_len):
+                    req_bytes = r.lindex('pending_requests', i)
+                    if req_bytes:
+                        req_id = req_bytes.decode('utf-8')
+                        req_json = r.get(req_id)
+                        if req_json:
+                            req_data = json.loads(req_json)
+                            if req_data['chat_id'] == user_id:
+                                requests_to_remove.append(req_id)
+                
+                # Hapus request yang ditemukan
+                for req_id in requests_to_remove:
+                    r.lrem('pending_requests', 0, req_id)
+                    r.delete(req_id)
+                    logger.info(f"🧹 Hapus request {req_id} untuk user {user_id}")
+                
+                # Reset flag
+                if user_id in waiting_for_result:
+                    waiting_for_result[user_id] = False
+                    
+            except Exception as e:
+                logger.error(f"❌ Gagal hapus queue: {e}")
+            
             return True
         else:
             logger.error(f"❌ Gagal kirim: {response.status_code} - {response.text}")
@@ -555,8 +585,7 @@ async def message_handler(event):
                 if req_json:
                     req_data = json.loads(req_json)
                     target_user = req_data['chat_id']
-                    r.lpop('pending_requests')
-                    r.delete(req_id)
+                    # JANGAN HAPUS DULU, nanti dihapus setelah terkirim
         
         if target_user:
             # Extract data
@@ -585,9 +614,7 @@ async def message_handler(event):
             output, markup = format_final_output(text, nickname, region, uid, sid, android, ios)
             await send_to_bot_b(target_user, output, markup)
             
-            # Reset flag
-            if target_user in waiting_for_result:
-                waiting_for_result[target_user] = False
+            # Reset flag (sudah di dalam send_to_bot_b)
         
         return
     
@@ -664,7 +691,7 @@ async def message_handler(event):
             await asyncio.sleep(30)
             bot_status['in_captcha'] = False
 
-# ==================== QUEUE PROCESSOR ====================
+# ==================== QUEUE PROCESSOR DENGAN CEK DUPLIKASI ====================
 
 async def process_queue():
     logger.info("🔄 Queue processor started")
@@ -680,36 +707,74 @@ async def process_queue():
                     req_id = req_bytes.decode('utf-8')
                     now = time.time()
                     
-                    # Cek rate limit
-                    if req_id in sent_requests:
-                        if now - sent_requests[req_id] < 15:
-                            await asyncio.sleep(2)
-                            continue
-                    
+                    # CEK DUPLIKASI: Jangan kirim jika user sedang menunggu hasil
                     req_json = r.get(req_id)
                     if not req_json:
                         r.lpop('pending_requests')
                         continue
                     
                     req_data = json.loads(req_json)
+                    user_id = req_data['chat_id']
+                    
+                    # Jika user ini sedang menunggu hasil, SKIP!
+                    if waiting_for_result.get(user_id, False):
+                        logger.info(f"⏳ User {user_id} sedang menunggu hasil, tunda request...")
+                        # Pindahkan ke belakang queue
+                        r.lpop('pending_requests')
+                        r.rpush('pending_requests', req_id)
+                        await asyncio.sleep(5)
+                        continue
+                    
+                    # Cek rate limit
+                    if req_id in sent_requests:
+                        if now - sent_requests[req_id] < 15:
+                            await asyncio.sleep(2)
+                            continue
+                    
                     cmd = f"{req_data['command']} {req_data['args'][0]} {req_data['args'][1]}"
                     
                     await client.send_message(BOT_A_USERNAME, cmd)
                     logger.info(f"📤 Kirim: {cmd}")
                     
                     sent_requests[req_id] = now
-                    waiting_for_result[req_data['chat_id']] = True
+                    waiting_for_result[user_id] = True
                     
         except Exception as e:
             logger.error(f"❌ Queue error: {e}")
         
         await asyncio.sleep(2)
 
-# ==================== MAIN ====================
+# ==================== MAIN DENGAN CLEANUP QUEUE ====================
 
 async def main():
     logger.info("🚀 Starting Telethon userbot...")
-    logger.info(f"Stok Admin URL: {STOK_ADMIN_URL}")
+    logger.info(f"🔗 Stok Admin URL: {STOK_ADMIN_URL}")
+    
+    # 🔥🔥🔥 BERSIHKAN SEMUA QUEUE LAMA SAAT STARTUP 🔥🔥🔥
+    try:
+        # 1. Hapus semua pending_requests
+        queue_len = r.llen('pending_requests')
+        if queue_len > 0:
+            logger.info(f"🧹 Membersihkan {queue_len} request lama dari queue...")
+            for _ in range(queue_len):
+                r.lpop('pending_requests')
+        
+        # 2. Hapus semua request data
+        keys = r.keys('req:*')
+        if keys:
+            logger.info(f"🧹 Membersihkan {len(keys)} request data lama...")
+            for key in keys:
+                r.delete(key)
+        
+        # 3. Reset semua state
+        global sent_requests, waiting_for_result
+        sent_requests = {}
+        waiting_for_result = {}
+        
+        logger.info("✅ Queue bersih! Siap menerima request baru.")
+        
+    except Exception as e:
+        logger.error(f"❌ Gagal bersihkan queue: {e}")
     
     try:
         await client.start()
