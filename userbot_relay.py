@@ -23,13 +23,14 @@ API_ID = int(os.environ.get('API_ID', 0))
 API_HASH = os.environ.get('API_HASH', '')
 SESSION_STRING = os.environ.get('SESSION_STRING', '')
 BOT_B_TOKEN = os.environ.get('BOT_B_TOKEN', '')
-BOT_A_USERNAME = 'bengkelmlbb_bot'  # PAKAI USERNAME, BUKAN ID
+BOT_A_USERNAME = 'bengkelmlbb_bot'
 REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
 OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', '')
+STOK_ADMIN_URL = os.environ.get('STOK_ADMIN_URL', 'https://whatsapp.com/channel/0029VbA4PrD5fM5TMgECoE1E')  # Default jika tidak diset
 
-# Country mapping (5 negara)
+# Country mapping
 country_mapping = {
-    'AF': '🇦🇫 Afghanistan',
+  'AF': '🇦🇫 Afghanistan',
   'AX': '🇦🇽 Åland Islands',
   'AL': '🇦🇱 Albania',
   'DZ': '🇩🇿 Algeria',
@@ -299,7 +300,8 @@ client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 bot_status = {'in_captcha': False}
 sent_requests = {}
-waiting_for_result = {}
+waiting_for_result = {}  # user_id: True/False - untuk track user yang sedang menunggu hasil
+downloaded_photos = []   # List untuk track foto yang sudah didownload
 
 # ==================== FUNGSI VALIDASI GOPAY ====================
 
@@ -307,15 +309,13 @@ def validate_mlbb_gopay_sync(user_id, server_id):
     """Validasi akun MLBB menggunakan API GoPay - TIMEOUT 30 DETIK"""
     url = 'https://gopay.co.id/games/v1/order/user-account'
     
-    # Headers PERSIS seperti di JavaScript
     headers = {
         'Content-Type': 'application/json',
         'X-Client': 'web-mobile',
-        'X-Timestamp': str(int(time.time() * 1000)),  # Milidetik!
+        'X-Timestamp': str(int(time.time() * 1000)),
         'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36'
     }
     
-    # Body PERSIS seperti di JavaScript
     body = {
         "code": "MOBILE_LEGENDS",
         "data": {
@@ -327,7 +327,6 @@ def validate_mlbb_gopay_sync(user_id, server_id):
     try:
         logger.info(f"📤 GoPay Request: {user_id}:{server_id}")
         
-        # TIMEOUT 30 DETIK!
         response = requests.post(
             url, 
             headers=headers, 
@@ -345,7 +344,6 @@ def validate_mlbb_gopay_sync(user_id, server_id):
                 'message': f'HTTP {response.status_code}'
             }
         
-        # Parse JSON
         try:
             result = response.json()
         except:
@@ -356,7 +354,6 @@ def validate_mlbb_gopay_sync(user_id, server_id):
                 'message': 'Invalid JSON response'
             }
         
-        # Cek struktur response
         if not result:
             logger.error("❌ Empty response")
             return {'status': False, 'creator': 'AntiDEV', 'message': 'Empty response'}
@@ -365,7 +362,6 @@ def validate_mlbb_gopay_sync(user_id, server_id):
             logger.error(f"❌ Response is not dict: {type(result)}")
             return {'status': False, 'creator': 'AntiDEV', 'message': 'Invalid response type'}
         
-        # Cek apakah ada field 'data'
         if 'data' not in result:
             logger.error(f"❌ No 'data' field in response. Keys: {list(result.keys())}")
             logger.error(f"Response: {json.dumps(result)[:500]}")
@@ -376,7 +372,6 @@ def validate_mlbb_gopay_sync(user_id, server_id):
             logger.error("❌ 'data' field is empty")
             return {'status': False, 'creator': 'AntiDEV', 'message': 'Empty data'}
         
-        # Ambil data yang diperlukan
         username = data.get('username', 'Unknown')
         if username:
             username = username.replace('+', ' ')
@@ -385,7 +380,6 @@ def validate_mlbb_gopay_sync(user_id, server_id):
         if country:
             country = country.upper()
         
-        # Mapping region
         region = country_mapping.get(country, f'🌍 {country}')
         
         logger.info(f"✅ GoPay SUCCESS: {username} - {region}")
@@ -422,21 +416,20 @@ async def read_number_from_photo_online(message):
         
         logger.info("📸 OCR Online: Downloading captcha photo...")
         
-        # Download foto
         photo_path = await message.download_media()
         logger.info(f"✅ Photo downloaded: {photo_path}")
         
-        # Baca file sebagai base64
+        # Simpan path foto ke list untuk dihapus nanti
+        downloaded_photos.append(photo_path)
+        logger.info(f"📋 Photo added to cleanup list: {photo_path}")
+        
         with open(photo_path, 'rb') as f:
             image_data = base64.b64encode(f.read()).decode('utf-8')
         
-        # Hapus file setelah dibaca
-        os.remove(photo_path)
+        # JANGAN HAPUS DULU, nanti dihapus setelah verify sukses
         
-        # OCR.space API endpoint
         url = 'https://api.ocr.space/parse/image'
         
-        # Payload untuk API
         payload = {
             'base64Image': f'data:image/jpeg;base64,{image_data}',
             'apikey': OCR_SPACE_API_KEY,
@@ -449,7 +442,6 @@ async def read_number_from_photo_online(message):
         
         logger.info("📤 Sending to OCR.space API...")
         
-        # Kirim request
         response = requests.post(url, data=payload, timeout=30)
         
         if response.status_code == 200:
@@ -459,11 +451,9 @@ async def read_number_from_photo_online(message):
                 if result.get('ParsedResults') and len(result['ParsedResults']) > 0:
                     text = result['ParsedResults'][0].get('ParsedText', '')
                     
-                    # Bersihkan hasil (ambil hanya angka)
                     text = re.sub(r'[^0-9]', '', text)
                     logger.info(f"📝 OCR result: '{text}'")
                     
-                    # Cari 6 digit
                     match = re.search(r'(\d{6})', text)
                     if match:
                         code = match.group(1)
@@ -483,27 +473,46 @@ async def read_number_from_photo_online(message):
         logger.error(f"❌ OCR Online error: {e}")
         return None
 
+# ==================== CLEANUP DOWNLOADED PHOTOS ====================
+
+def cleanup_downloaded_photos():
+    """Hapus semua foto yang sudah didownload"""
+    global downloaded_photos
+    
+    if not downloaded_photos:
+        return
+    
+    logger.info(f"🧹 Cleaning up {len(downloaded_photos)} downloaded photos...")
+    
+    deleted_count = 0
+    for photo_path in downloaded_photos[:]:  # Copy list untuk iterasi
+        try:
+            if os.path.exists(photo_path):
+                os.remove(photo_path)
+                logger.info(f"✅ Deleted: {photo_path}")
+                deleted_count += 1
+            downloaded_photos.remove(photo_path)
+        except Exception as e:
+            logger.error(f"❌ Failed to delete {photo_path}: {e}")
+    
+    logger.info(f"✅ Cleanup complete: {deleted_count} photos deleted")
+
 # ==================== FUNGSI FORMAT OUTPUT ====================
 
 def format_final_output(original_text, nickname, region, uid, sid, android, ios):
     """Format output final sesuai permintaan"""
     
-    # Ekstrak bind info dari text asli
     bind_lines = []
     lines = original_text.split('\n')
     
     for line in lines:
         if any(keyword in line for keyword in ['Moonton', 'Google Play', 'Facebook', 'Tiktok', 'VK', 'Apple', 'GCID', 'Telegram', 'WhatsApp']):
-            # Bersihkan format
             clean_line = line.replace('✧', '•').strip()
-            # Hapus spasi berlebih
             clean_line = re.sub(r'\s+', ' ', clean_line)
             bind_lines.append(clean_line)
     
-    # Gabungkan bind info
     bind_info = '\n'.join(bind_lines) if bind_lines else '• Data bind tidak tersedia'
     
-    # Format final
     final = f"""INFORMASI AKUN
 
 ID: {uid}
@@ -516,15 +525,43 @@ BIND INFO:
 
 Device Login:
 • Android: {android} perangkat
-• iOS: {ios} perangkat"""
+• iOS: {ios} perangkat
+
+Stok Admin: {STOK_ADMIN_URL}"""
     
     return final
+
+# ==================== SEND TO BOT B ====================
+
+async def send_to_bot_b(user_id, text):
+    """Kirim pesan ke user via Bot B"""
+    url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
+    data = {
+        'chat_id': user_id,
+        'text': text,
+        'parse_mode': 'HTML'
+    }
+    
+    try:
+        response = requests.post(url, json=data, timeout=10)
+        if response.status_code == 200:
+            logger.info(f"✅✅✅ TERKIRIM KE USER {user_id}!")
+            return True
+        else:
+            logger.error(f"❌ Gagal forward: {response.status_code}")
+            return False
+    except Exception as e:
+        logger.error(f"❌ Forward error: {e}")
+        return False
 
 # ==================== RETRY PENDING REQUESTS ====================
 
 async def retry_pending_requests():
     """Kirim ulang request yang pending setelah captcha selesai"""
     logger.info("🔄 Retrying pending requests...")
+    
+    # Bersihkan foto yang sudah didownload
+    cleanup_downloaded_photos()
     
     retry_count = 0
     while True:
@@ -541,9 +578,12 @@ async def retry_pending_requests():
         request_data = json.loads(request_data_json)
         cmd = f"{request_data['command']} {request_data['args'][0]} {request_data['args'][1]}"
         
-        # PAKAI USERNAME, BUKAN ID
         await client.send_message(BOT_A_USERNAME, cmd)
         logger.info(f"🔄 Retry: {cmd} for user {request_data['chat_id']}")
+        
+        # SET FLAG bahwa user ini sedang menunggu hasil
+        waiting_for_result[request_data['chat_id']] = True
+        logger.info(f"📋 Waiting flag SET for user {request_data['chat_id']} after retry")
         
         r.setex(request_id, 300, json.dumps(request_data))
         retry_count += 1
@@ -563,10 +603,8 @@ async def message_handler(event):
     chat_id = event.chat_id
     sender_id = event.sender_id
     
-    # Ambil teks
     text = message.text or message.message or ''
     
-    # LOG LENGKAP
     logger.info("=" * 80)
     logger.info("🔥🔥🔥 TELETHON MESSAGE HANDLER 🔥🔥🔥")
     logger.info(f"⏰ Time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -576,7 +614,6 @@ async def message_handler(event):
     logger.info(f"📸 Has Photo: {bool(message.photo)}")
     logger.info(f"📝 Text preview: '{text[:100]}'")
     
-    # CEK APAKAH DARI BOT A (gunakan ID)
     if chat_id != 7240340418 and sender_id != 7240340418:
         logger.info("❌ Bukan dari Bot A")
         logger.info("=" * 80)
@@ -588,26 +625,35 @@ async def message_handler(event):
     if 'BIND ACCOUNT INFO' in text or 'INFORMASI AKUN' in text or '──────────────────────' in text:
         logger.info("✅✅✅ INI HASIL INFO VALID! FORWARDING KE USER...")
         
-        # Ambil request dari queue
-        request_id = r.lpop('pending_requests')
+        # CARI USER YANG SEDANG MENUNGGU HASIL
+        target_user = None
+        request_data = None
         
-        if request_id:
-            request_id = request_id.decode('utf-8')
-            request_data_json = r.get(request_id)
-            
-            if request_data_json is None:
-                logger.warning(f"⚠️ Request expired")
-                logger.info("=" * 80)
-                return
-            
-            request_data = json.loads(request_data_json)
-            user_id = request_data['chat_id']
-            
+        # Cek di waiting_for_result
+        for user_id, waiting in list(waiting_for_result.items()):
+            if waiting:
+                target_user = user_id
+                logger.info(f"🎯 Found waiting user: {target_user}")
+                break
+        
+        if not target_user:
+            # Fallback: ambil dari queue
+            request_id_bytes = r.lindex('pending_requests', 0)
+            if request_id_bytes:
+                request_id = request_id_bytes.decode('utf-8')
+                request_data_json = r.get(request_id)
+                if request_data_json:
+                    request_data = json.loads(request_data_json)
+                    target_user = request_data['chat_id']
+                    logger.info(f"🎯 Using queue user: {target_user}")
+                    r.lpop('pending_requests')
+                    r.delete(request_id)
+        
+        if target_user:
             # Ekstrak ID dan Server dari text
             id_match = re.search(r'ID:?\s*(\d+)', text)
             server_match = re.search(r'Server:?\s*(\d+)', text)
             
-            # Ekstrak device login
             android_match = re.search(r'Android:?\s*(\d+)', text)
             ios_match = re.search(r'iOS:?\s*(\d+)', text)
             
@@ -616,7 +662,6 @@ async def message_handler(event):
             android = android_match.group(1) if android_match else '0'
             ios = ios_match.group(1) if ios_match else '0'
             
-            # Panggil API GoPay
             gopay_result = validate_mlbb_gopay_sync(uid, sid)
             
             if gopay_result['status']:
@@ -628,41 +673,30 @@ async def message_handler(event):
                 region = '🌍 Tidak diketahui'
                 logger.warning(f"⚠️ GoPay: {gopay_result.get('message')}")
             
-            # Format output final
             final_output = format_final_output(text, nickname, region, uid, sid, android, ios)
             
             # Kirim ke user via Bot B
-            url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
-            data = {
-                'chat_id': user_id,
-                'text': final_output,
-                'parse_mode': 'HTML'
-            }
+            success = await send_to_bot_b(target_user, final_output)
             
-            try:
-                response = requests.post(url, json=data, timeout=10)
-                if response.status_code == 200:
-                    logger.info(f"✅✅✅ TERKIRIM KE USER {user_id}!")
-                    r.delete(request_id)
-                    
-                    # Reset state
-                    if user_id in waiting_for_result:
-                        waiting_for_result[user_id] = False
-                else:
-                    logger.error(f"❌ Gagal forward: {response.status_code}")
-                    r.rpush('pending_requests', request_id)
-            except Exception as e:
-                logger.error(f"❌ Forward error: {e}")
-                r.rpush('pending_requests', request_id)
+            if success:
+                # Reset waiting flag
+                if target_user in waiting_for_result:
+                    waiting_for_result[target_user] = False
+                    logger.info(f"📋 Waiting flag RESET for user {target_user}")
         else:
-            logger.warning("⚠️ TIDAK ADA REQUEST PENDING!")
+            logger.warning("⚠️ TIDAK ADA USER YANG MENUNGGU HASIL!")
         
         logger.info("=" * 80)
         return
     
     # ===== CEK APAKAH INI PESAN VERIFIKASI SUKSES =====
     if text and ('verification successful' in text.lower() or 'verified' in text.lower()):
-        logger.info("✅ Captcha verification successful - IGNORED")
+        logger.info("✅ Captcha verification successful")
+        
+        # BERSIHKAN SEMUA FOTO YANG SUDAH DIDOWNLOAD
+        cleanup_downloaded_photos()
+        
+        logger.info("✅ Semua foto captcha telah dihapus")
         logger.info("=" * 80)
         return
     
@@ -677,13 +711,12 @@ async def message_handler(event):
     # ===== CEK CAPTCHA =====
     is_captcha = False
     captcha_code = None
+    current_photo_path = None
     
-    # Cek 1: Ada foto (captcha)
     if message.photo:
         logger.info("📸 PHOTO DETECTED - This is a captcha")
         is_captcha = True
         
-        # SET STATE untuk user yang menunggu
         top_request = r.lindex('pending_requests', 0)
         if top_request:
             top_req_id = top_request.decode('utf-8')
@@ -692,14 +725,12 @@ async def message_handler(event):
             waiting_for_result[waiting_user] = True
             logger.info(f"📋 Waiting for result SET for user {waiting_user}")
         
-        # Cek angka di caption
         if text:
             digits = re.findall(r'\d', text)
             if len(digits) >= 6:
                 captcha_code = ''.join(digits[:6])
                 logger.info(f"✅ Found code in caption: {captcha_code}")
     
-    # Cek 2: Teks mengandung angka 6 digit + kata kunci
     if not is_captcha and text:
         digits = re.findall(r'\d', text)
         if len(digits) >= 6:
@@ -717,11 +748,9 @@ async def message_handler(event):
                     waiting_for_result[waiting_user] = True
                     logger.info(f"📋 Waiting for result SET for user {waiting_user}")
     
-    # ===== JIKA CAPTCHA =====
     if is_captcha:
         logger.warning("🚫 CAPTCHA PROCESSING...")
         
-        # Jika captcha_code belum ada, pakai OCR
         if not captcha_code and message.photo:
             logger.info("🔍 No text code, trying OCR...")
             captcha_code = await read_number_from_photo_online(message)
@@ -730,11 +759,9 @@ async def message_handler(event):
             logger.info(f"✅✅✅ CAPTCHA CODE: {captcha_code}")
             bot_status['in_captcha'] = True
             
-            # PAKAI USERNAME UNTUK VERIFY
             await client.send_message(BOT_A_USERNAME, f"/verify {captcha_code}")
             logger.info(f"📤 Verification sent: /verify {captcha_code}")
             
-            # JEDA 5 DETIK SETELAH VERIFY (sesuai permintaan)
             await asyncio.sleep(5)
             
             bot_status['in_captcha'] = False
@@ -742,6 +769,10 @@ async def message_handler(event):
             await retry_pending_requests()
         else:
             logger.error("❌❌❌ Gagal mendapatkan captcha code")
+            
+            # Bersihkan foto yang mungkin sudah didownload
+            cleanup_downloaded_photos()
+            
             await asyncio.sleep(30)
             bot_status['in_captcha'] = False
         
@@ -790,16 +821,31 @@ async def process_queue():
                     cmd = f"{request_data['command']} {request_data['args'][0]} {request_data['args'][1]}"
                     
                     try:
-                        # PAKAI USERNAME, BUKAN ID - LANGSUNG KERJA TANPA PERLU CHAT DULUAN
                         await client.send_message(BOT_A_USERNAME, cmd)
                         logger.info(f"📤 Sent to Bot A: {cmd}")
                         sent_requests[request_id] = current_time
+                        
+                        # SET FLAG bahwa user ini sedang menunggu hasil
+                        waiting_for_result[request_data['chat_id']] = True
+                        logger.info(f"📋 Waiting flag SET for user {request_data['chat_id']}")
+                        
                     except Exception as e:
                         logger.error(f"❌ Failed to send to Bot A: {e}")
         except Exception as e:
             logger.error(f"❌ Queue processor error: {e}")
         
         await asyncio.sleep(2)
+
+# ==================== CLEANUP PERIODIK ====================
+
+async def periodic_cleanup():
+    """Bersihkan foto-foto lama setiap 1 jam"""
+    logger.info("🧹 Periodic cleanup task started (every 1 hour)")
+    
+    while True:
+        await asyncio.sleep(3600)  # 1 jam
+        logger.info("🧹 Running periodic cleanup...")
+        cleanup_downloaded_photos()
 
 # ==================== MAIN ====================
 
@@ -808,7 +854,8 @@ async def main():
     sent_requests = {}
     waiting_for_result = {}
     
-    logger.info("🚀 Starting Telethon userbot...")
+    logger.info(f"🚀 Starting Telethon userbot...")
+    logger.info(f"🔗 Stok Admin URL: {STOK_ADMIN_URL}")
     
     try:
         await client.start()
@@ -817,13 +864,15 @@ async def main():
         me = await client.get_me()
         logger.info(f"✅ Logged in as: {me.first_name} (@{me.username})")
         
-        # TIDAK PERLU RESOLVE ENTITY - LANGSUNG PAKAI USERNAME NANTI
-        
         client.add_event_handler(message_handler)
         client.add_event_handler(message_edit_handler)
         logger.info("✅ Event handlers registered")
         
-        await process_queue()
+        # Jalankan queue processor dan periodic cleanup secara concurrent
+        await asyncio.gather(
+            process_queue(),
+            periodic_cleanup()
+        )
         
     except Exception as e:
         logger.error(f"❌ Failed to start: {e}")
