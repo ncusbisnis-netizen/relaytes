@@ -295,12 +295,9 @@ except Exception as e:
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 bot_status = {'in_captcha': False}
-sent_requests = {}  # {req_id: {'time': timestamp, 'last_sent': timestamp, 'user_id': user_id, 'attempts': int}}
+sent_requests = {}
 waiting_for_result = {}
 downloaded_photos = []
-
-MAX_ATTEMPTS = 3
-TIMEOUT = 15
 
 # ==================== FUNGSI CLEANUP TEXT ====================
 
@@ -431,7 +428,7 @@ def cleanup_downloaded_photos():
 # ==================== FORMAT OUTPUT ====================
 
 def format_final_output(original_text, nickname, region, uid, sid, android, ios):
-    """Format output final dengan cleanup text"""
+    """Format output final"""
     
     keywords = ['Moonton', 'VK', 'Google Play', 'Tiktok', 'Facebook', 'Apple', 'GCID', 'Telegram', 'WhatsApp']
     bind_info = []
@@ -442,10 +439,6 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios)
             if kw in line:
                 clean_line = line.replace('✧', '•').strip()
                 clean_line = re.sub(r'\s+', ' ', clean_line)
-                
-                # Terapkan cleanup
-                clean_line = clean_bind_text(clean_line)
-                
                 if ':' in clean_line:
                     parts = clean_line.split(':', 1)
                     clean_line = f"{parts[0].strip()}: {parts[1].strip()}"
@@ -455,7 +448,8 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios)
         if not found:
             bind_info.append(f"• {kw} : empty.")
     
-    final = f"""INFORMATION ACCOUNT
+    final = f"""INFORMASI AKUN
+
 ID: {uid}
 Server: {sid}
 Nickname: {nickname}
@@ -494,7 +488,7 @@ async def send_to_bot_b(user_id, text, reply_markup=None):
         if response.status_code == 200:
             logger.info(f"✅ TERKIRIM KE USER {user_id}")
             
-            # Hapus request untuk user ini dari queue
+            # Hapus semua request untuk user ini
             try:
                 queue_len = r.llen('pending_requests')
                 for i in range(queue_len):
@@ -507,10 +501,7 @@ async def send_to_bot_b(user_id, text, reply_markup=None):
                             if req_data['chat_id'] == user_id:
                                 r.lrem('pending_requests', 0, req_id)
                                 r.delete(req_id)
-                                logger.info(f"🧹 Hapus request {req_id} untuk user {user_id}")
-                                
-                                if req_id in sent_requests:
-                                    del sent_requests[req_id]
+                                logger.info(f"🧹 Hapus request {req_id}")
                 
                 waiting_for_result[user_id] = False
             except Exception as e:
@@ -536,35 +527,39 @@ async def message_handler(event):
     
     logger.info(f"📩 Pesan dari Bot A: {text[:100]}")
     
-    # Reset timer untuk request pertama di queue (jika ada)
-    req_bytes = r.lindex('pending_requests', 0)
-    req_id = None
-    if req_bytes:
-        req_id = req_bytes.decode('utf-8')
-        if req_id in sent_requests:
-            sent_requests[req_id]['last_sent'] = time.time()
-            logger.info(f"⏱️ Reset timer untuk request {req_id}")
-    
-    # ===== HASIL INFO =====
-    if 'BIND ACCOUNT INFO' in text and 'ID:' in text and 'Server:' in text:
-        logger.info("✅ DAPET HASIL INFO!")
+    # ===== HASIL INFO DENGAN AWALAN ────────────────────── =====
+    if text.startswith('──────────────────────') and 'BIND ACCOUNT INFO' in text:
+        logger.info("✅ DAPET HASIL INFO DARI BOT A!")
         
-        # Ambil ID dari text
-        id_match = re.search(r'ID:?\s*(\d+)', text)
-        server_match = re.search(r'Server:?\s*(\d+)', text)
+        # Cari user yang menunggu
+        target_user = None
+        for uid, waiting in list(waiting_for_result.items()):
+            if waiting:
+                target_user = uid
+                break
         
-        if id_match and server_match:
-            uid = id_match.group(1)
-            sid = server_match.group(1)
-            
-            # Ekstrak data lainnya
+        if not target_user:
+            req_bytes = r.lindex('pending_requests', 0)
+            if req_bytes:
+                req_id = req_bytes.decode('utf-8')
+                req_json = r.get(req_id)
+                if req_json:
+                    req_data = json.loads(req_json)
+                    target_user = req_data['chat_id']
+        
+        if target_user:
+            # Extract data
+            id_match = re.search(r'ID:?\s*(\d+)', text)
+            server_match = re.search(r'Server:?\s*(\d+)', text)
             android_match = re.search(r'Android:?\s*(\d+)', text)
             ios_match = re.search(r'iOS:?\s*(\d+)', text)
             
+            uid = id_match.group(1) if id_match else 'Unknown'
+            sid = server_match.group(1) if server_match else 'Unknown'
             android = android_match.group(1) if android_match else '0'
             ios = ios_match.group(1) if ios_match else '0'
             
-            # Panggil GoPay
+            # GoPay
             gopay = validate_mlbb_gopay_sync(uid, sid)
             
             if gopay['status']:
@@ -576,55 +571,22 @@ async def message_handler(event):
             
             # Format dan kirim
             output, markup = format_final_output(text, nickname, region, uid, sid, android, ios)
-            await send_to_bot_b(int(uid), output, markup)
-            
-            # Hapus request dari sent_requests
-            if req_id and req_id in sent_requests:
-                del sent_requests[req_id]
+            await send_to_bot_b(target_user, output, markup)
         
-        return
-    
-    # ===== RATE LIMIT =====
-    if 'please wait' in text.lower() or 'rate limit' in text.lower():
-        logger.warning("⏳ RATE LIMIT DARI BOT A! Menunggu 10 detik...")
-        
-        # Ambil request yang terkena rate limit
-        req_data = None
-        if req_bytes and req_id:
-            req_json = r.get(req_id)
-            if req_json:
-                req_data = json.loads(req_json)
-                logger.warning(f"⏳ Request untuk user {req_data['chat_id']} terkena rate limit")
-        
-        # Tunggu 10 detik
-        await asyncio.sleep(10)
-        
-        # COBA LAGI! Kirim ulang request yang sama
-        if req_data:
-            cmd = f"{req_data['command']} {req_data['args'][0]} {req_data['args'][1]}"
-            await client.send_message(BOT_A_USERNAME, cmd)
-            logger.info(f"🔄 COBA LAGI setelah rate limit: {cmd}")
-            
-            # Update sent time
-            if req_id and req_id in sent_requests:
-                sent_requests[req_id]['last_sent'] = time.time()
-                sent_requests[req_id]['time'] = time.time()
-        
-        logger.info("✅ Selesai rate limit, lanjut...")
         return
     
     # ===== VERIFIKASI SUKSES =====
-    if 'verification successful' in text.lower():
+    if 'verification successful' in text.lower() or 'verified' in text.lower():
         logger.info("✅ Verifikasi sukses")
         cleanup_downloaded_photos()
-        bot_status['in_captcha'] = False
         
-        # Delay 5 detik sebelum auto-retry
-        await asyncio.sleep(5)
-        
-        # AUTO RETRY: Ambil request pertama dan kirim ulang
+        # 🔥 AUTO RETRY: Ambil request pertama dan kirim ulang 🔥
         try:
-            if req_bytes and req_id:
+            await asyncio.sleep(5)  # Kasih jeda 2 detik
+            
+            req_bytes = r.lindex('pending_requests', 0)
+            if req_bytes:
+                req_id = req_bytes.decode('utf-8')
                 req_json = r.get(req_id)
                 if req_json:
                     req_data = json.loads(req_json)
@@ -633,82 +595,52 @@ async def message_handler(event):
                     await client.send_message(BOT_A_USERNAME, cmd)
                     logger.info(f"🔄 AUTO-RETRY setelah verify: {cmd}")
                     
-                    # Update sent_requests
-                    if req_id in sent_requests:
-                        sent_requests[req_id]['last_sent'] = time.time()
-                        sent_requests[req_id]['time'] = time.time()
-                        sent_requests[req_id]['attempts'] += 1
-                    else:
-                        sent_requests[req_id] = {
-                            'time': time.time(),
-                            'last_sent': time.time(),
-                            'user_id': req_data['chat_id'],
-                            'attempts': 1
-                        }
-                    
+                    # Set waiting flag
                     waiting_for_result[req_data['chat_id']] = True
+                    sent_requests[req_id] = time.time()
         except Exception as e:
             logger.error(f"❌ Gagal auto-retry: {e}")
         
         return
     
     # ===== CAPTCHA =====
-    if message.photo or ('captcha' in text.lower() and re.search(r'\d{6}', text)) or re.search(r'^\d{6}$', text.strip()):
+    if message.photo or ('captcha' in text.lower() and re.search(r'\d{6}', text)):
         logger.warning("🚫 CAPTCHA DETECTED!")
         
         captcha_code = None
         
-        # Cek di caption/text (LANGSUNG, TANPA DELAY)
+        # Cek di caption/text
         digits = re.findall(r'\d', text)
         if len(digits) >= 6:
             captcha_code = ''.join(digits[:6])
-            logger.info(f"✅ Captcha code dari text: {captcha_code}")
         
-        # Cek dengan OCR (LANGSUNG, TANPA DELAY)
-        if not captcha_code and message.photo and OCR_SPACE_API_KEY:
+        # Cek dengan OCR
+        if not captcha_code and message.photo:
             captcha_code = await read_number_from_photo_online(message)
-            if captcha_code:
-                logger.info(f"✅ Captcha code dari OCR: {captcha_code}")
         
         if captcha_code and len(captcha_code) == 6:
             logger.info(f"✅ Code: {captcha_code}")
             bot_status['in_captcha'] = True
             
             # Set waiting flag untuk user pertama di queue
-            if req_bytes and req_id:
+            req_bytes = r.lindex('pending_requests', 0)
+            if req_bytes:
+                req_id = req_bytes.decode('utf-8')
                 req_json = r.get(req_id)
                 if req_json:
                     req_data = json.loads(req_json)
                     waiting_for_result[req_data['chat_id']] = True
-                    logger.info(f"📋 Waiting flag SET untuk user {req_data['chat_id']}")
             
-            # KIRIM VERIFY (LANGSUNG, TANPA DELAY)
+            # Kirim verify
             await client.send_message(BOT_A_USERNAME, f"/verify {captcha_code}")
             logger.info(f"📤 Verifikasi dikirim")
             
-            # Jangan reset bot_status di sini
+            await asyncio.sleep(5)
+            bot_status['in_captcha'] = False
         else:
             logger.error("❌ Gagal dapat code captcha")
             cleanup_downloaded_photos()
-            
-            # HAPUS REQUEST PERTAMA KARENA CAPTCHA GAGAL
-            if req_bytes and req_id:
-                user_id = None
-                req_json = r.get(req_id)
-                if req_json:
-                    req_data = json.loads(req_json)
-                    user_id = req_data['chat_id']
-                
-                r.lpop('pending_requests')
-                r.delete(req_id)
-                logger.warning(f"🧹 Hapus request {req_id} karena captcha gagal")
-                
-                if user_id and user_id in waiting_for_result:
-                    waiting_for_result[user_id] = False
-                
-                if req_id in sent_requests:
-                    del sent_requests[req_id]
-            
+            await asyncio.sleep(30)
             bot_status['in_captcha'] = False
 
 # ==================== QUEUE PROCESSOR ====================
@@ -718,51 +650,16 @@ async def process_queue():
     
     while True:
         try:
-            current_time = time.time()
-            
-            # CEK REQUEST YANG TIMEOUT (15 DETIK TIDAK ADA RESPON)
-            for req_id, data in list(sent_requests.items()):
-                if current_time - data['last_sent'] > TIMEOUT:
-                    logger.warning(f"⏰ Request {req_id} untuk user {data['user_id']} timeout {TIMEOUT} detik")
-                    
-                    if data['attempts'] >= MAX_ATTEMPTS:
-                        # Sudah max attempts, hapus
-                        logger.error(f"❌ Request {req_id} gagal setelah {MAX_ATTEMPTS}x percobaan, dihapus")
-                        r.lrem('pending_requests', 0, req_id)
-                        r.delete(req_id)
-                        if data['user_id'] in waiting_for_result:
-                            waiting_for_result[data['user_id']] = False
-                        del sent_requests[req_id]
-                    else:
-                        # Kirim ulang
-                        req_json = r.get(req_id)
-                        if req_json:
-                            req_data = json.loads(req_json)
-                            cmd = f"{req_data['command']} {req_data['args'][0]} {req_data['args'][1]}"
-                            
-                            await client.send_message(BOT_A_USERNAME, cmd)
-                            logger.info(f"🔄 PERCOBAAN KE-{data['attempts']+1}: {cmd}")
-                            
-                            # Update data
-                            data['attempts'] += 1
-                            data['last_sent'] = current_time
-                            data['time'] = current_time
-                            
-                            waiting_for_result[data['user_id']] = True
-            
-            # Cek apakah ada yang sedang diproses
-            processing = any(waiting for waiting in waiting_for_result.values())
-            
-            # Jika tidak ada yang diproses, ambil request berikutnya
-            if not processing and not bot_status['in_captcha']:
+            if not bot_status['in_captcha']:
                 req_bytes = r.lindex('pending_requests', 0)
                 
                 if req_bytes:
                     req_id = req_bytes.decode('utf-8')
+                    now = time.time()
                     
-                    # Cek apakah request ini sudah pernah dikirim
-                    if req_id in sent_requests:
-                        await asyncio.sleep(1)
+                    # Cek rate limit
+                    if req_id in sent_requests and now - sent_requests[req_id] < 15:
+                        await asyncio.sleep(2)
                         continue
                     
                     req_json = r.get(req_id)
@@ -775,8 +672,10 @@ async def process_queue():
                     
                     # Cek apakah user sedang menunggu hasil
                     if waiting_for_result.get(user_id, False):
-                        logger.info(f"⏳ User {user_id} sedang menunggu hasil, tunda...")
-                        await asyncio.sleep(2)
+                        logger.info(f"⏳ User {user_id} menunggu hasil, tunda...")
+                        r.lpop('pending_requests')
+                        r.rpush('pending_requests', req_id)
+                        await asyncio.sleep(5)
                         continue
                     
                     cmd = f"{req_data['command']} {req_data['args'][0]} {req_data['args'][1]}"
@@ -784,15 +683,8 @@ async def process_queue():
                     await client.send_message(BOT_A_USERNAME, cmd)
                     logger.info(f"📤 Kirim: {cmd}")
                     
-                    # Catat request yang dikirim
-                    sent_requests[req_id] = {
-                        'time': current_time,
-                        'last_sent': current_time,
-                        'user_id': user_id,
-                        'attempts': 1
-                    }
+                    sent_requests[req_id] = now
                     waiting_for_result[user_id] = True
-                    
         except Exception as e:
             logger.error(f"❌ Queue error: {e}")
         
