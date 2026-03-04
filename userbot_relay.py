@@ -282,9 +282,6 @@ if not all([API_ID, API_HASH, SESSION_STRING, BOT_B_TOKEN, REDIS_URL]):
     logger.error("❌ Missing required environment variables!")
     exit(1)
 
-if not OCR_SPACE_API_KEY:
-    logger.warning("⚠️ OCR_SPACE_API_KEY tidak ditemukan! OCR online tidak akan berfungsi.")
-
 # Redis connection
 try:
     r = redis.from_url(REDIS_URL)
@@ -474,7 +471,7 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios)
         if not found:
             bind_info.append(f"• {kw} : empty.")
     
-    final = f"""INFORMATION ACCOUNT
+    final = f"""INFORMASI AKUN
 
 ID: {uid}
 Server: {sid}
@@ -485,8 +482,8 @@ BIND INFO:
 {chr(10).join(bind_info)}
 
 Device Login:
-• Android: {android} device
-• iOS: {ios} device"""
+• Android: {android} perangkat
+• iOS: {ios} perangkat"""
 
     reply_markup = {
         'inline_keyboard': [
@@ -496,12 +493,25 @@ Device Login:
     
     return final, reply_markup
 
-# ==================== SEND TO BOT B ====================
+# ==================== SEND TO BOT B DENGAN CHAT ID DARI REDIS ====================
 
 async def send_to_bot_b(user_id, text, reply_markup=None):
+    # AMBIL CHAT ID DARI REDIS (DISIMPAN OLEH BOT B)
+    chat_id_key = f"user_chat:{user_id}"
+    chat_id_bytes = r.get(chat_id_key)
+    
+    if not chat_id_bytes:
+        logger.error(f"❌ Chat ID untuk user {user_id} tidak ditemukan di Redis!")
+        # Fallback: kirim ke user_id (mungkin berhasil kalau user pernah chat)
+        chat_id = user_id
+        logger.info(f"📤 Fallback ke user_id: {chat_id}")
+    else:
+        chat_id = int(chat_id_bytes.decode('utf-8'))
+        logger.info(f"📤 Mengirim ke chat_id {chat_id} (dari Redis)")
+    
     url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
     data = {
-        'chat_id': user_id,
+        'chat_id': chat_id,
         'text': text,
         'parse_mode': 'HTML'
     }
@@ -510,11 +520,11 @@ async def send_to_bot_b(user_id, text, reply_markup=None):
         data['reply_markup'] = json.dumps(reply_markup)
     
     try:
-        logger.info(f"📤 Mengirim ke user {user_id}...")
+        logger.info(f"📤 Mengirim ke chat_id {chat_id}...")
         response = requests.post(url, json=data, timeout=10)
         
         if response.status_code == 200:
-            logger.info(f"✅ TERKIRIM KE USER {user_id}")
+            logger.info(f"✅ TERKIRIM KE USER {user_id} (chat_id: {chat_id})")
             
             # Hapus semua request untuk user ini
             try:
@@ -526,7 +536,7 @@ async def send_to_bot_b(user_id, text, reply_markup=None):
                         req_json = r.get(req_id)
                         if req_json:
                             req_data = json.loads(req_json)
-                            if req_data['chat_id'] == user_id:
+                            if req_data['user_id'] == user_id:
                                 r.lrem('pending_requests', 0, req_id)
                                 r.delete(req_id)
                                 logger.info(f"🧹 Hapus request {req_id} untuk user {user_id}")
@@ -540,10 +550,16 @@ async def send_to_bot_b(user_id, text, reply_markup=None):
             
             return True
         else:
-            logger.error(f"❌ Gagal kirim ke user {user_id}: {response.status_code} - {response.text}")
+            logger.error(f"❌ Gagal kirim ke chat_id {chat_id}: {response.status_code} - {response.text}")
+            
+            # Kalau error karena chat not found, hapus dari Redis
+            if response.status_code == 400 and 'chat not found' in response.text:
+                r.delete(chat_id_key)
+                logger.warning(f"🗑️ Hapus chat_id_key {chat_id_key} dari Redis")
+            
             return False
     except Exception as e:
-        logger.error(f"❌ Gagal kirim ke user {user_id}: {e}")
+        logger.error(f"❌ Gagal kirim ke chat_id {chat_id}: {e}")
         return False
 
 # ==================== TELEGRAM EVENT HANDLER ====================
@@ -678,11 +694,11 @@ async def message_handler(event):
                         sent_requests[req_id] = {
                             'first_sent': time.time(),
                             'last_sent': time.time(),
-                            'user_id': req_data['chat_id'],
+                            'user_id': req_data['user_id'],
                             'attempts': 1
                         }
                     
-                    waiting_for_result[req_data['chat_id']] = True
+                    waiting_for_result[req_data['user_id']] = True
         except Exception as e:
             logger.error(f"❌ Gagal auto-retry: {e}")
         
@@ -720,15 +736,15 @@ async def message_handler(event):
                 req_json = r.get(req_id)
                 if req_json:
                     req_data = json.loads(req_json)
-                    waiting_for_result[req_data['chat_id']] = True
-                    logger.info(f"📋 Waiting flag SET untuk user {req_data['chat_id']}")
+                    waiting_for_result[req_data['user_id']] = True
+                    logger.info(f"📋 Waiting flag SET untuk user {req_data['user_id']}")
                     
                     # Catat di sent_requests
                     if req_id not in sent_requests:
                         sent_requests[req_id] = {
                             'first_sent': time.time(),
                             'last_sent': time.time(),
-                            'user_id': req_data['chat_id'],
+                            'user_id': req_data['user_id'],
                             'attempts': 1
                         }
             
@@ -748,7 +764,7 @@ async def message_handler(event):
                 req_json = r.get(req_id)
                 if req_json:
                     req_data = json.loads(req_json)
-                    user_id = req_data['chat_id']
+                    user_id = req_data['user_id']
                 
                 r.lpop('pending_requests')
                 r.delete(req_id)
@@ -834,7 +850,7 @@ async def process_queue():
                         continue
                     
                     req_data = json.loads(req_json)
-                    user_id = req_data['chat_id']
+                    user_id = req_data['user_id']
                     
                     # Cek apakah user sedang menunggu hasil
                     if waiting_for_result.get(user_id, False):
