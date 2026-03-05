@@ -17,7 +17,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Config dari environment
+# ==================== KONFIGURASI ====================
 API_ID = int(os.environ.get('API_ID', 0))
 API_HASH = os.environ.get('API_HASH', '')
 SESSION_STRING = os.environ.get('SESSION_STRING', '')
@@ -27,7 +27,7 @@ REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
 OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', '')
 STOK_ADMIN_URL = os.environ.get('STOK_ADMIN_URL', 'https://whatsapp.com/channel/0029VbA4PrD5fM5TMgECoE1E')
 
-# Country mapping sederhana
+# ==================== COUNTRY MAPPING SEDERHANA ====================
 country_mapping = {
     'AF': '🇦🇫 Afghanistan',
   'AX': '🇦🇽 Åland Islands',
@@ -274,7 +274,7 @@ country_mapping = {
   'WF': '🇼🇫 Wallis and Futuna',
   'YE': '🇾🇪 Yemen',
   'ZM': '🇿🇲 Zambia',
-  'ZW': '🇿🇼 Zimbabwe'
+  'ZW': '🇿🇼 Zimbabwe',
 }
 
 # Validasi environment
@@ -282,7 +282,7 @@ if not all([API_ID, API_HASH, SESSION_STRING, BOT_B_TOKEN, REDIS_URL]):
     logger.error("❌ Missing required environment variables!")
     exit(1)
 
-# Redis connection
+# ==================== REDIS ====================
 try:
     r = redis.from_url(REDIS_URL)
     r.ping()
@@ -291,19 +291,27 @@ except Exception as e:
     logger.error(f"❌ Redis connection failed: {e}")
     exit(1)
 
-# Telethon Client
+# ==================== GLOBAL VARIABLES ====================
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 bot_status = {'in_captcha': False}
-sent_requests = {}
-waiting_for_result = {}
-downloaded_photos = []
+sent_requests = {}          # untuk rate limiting
+waiting_for_result = {}     # flag per user
+downloaded_photos = []       # untuk cleanup file OCR
 
-# ==================== FUNGSI CLEANUP TEXT ====================
+# Data request yang sedang aktif (hanya satu dalam satu waktu)
+active_requests = {}        # key: req_id, value: dict {chat_id, message_id, start_time, command, args}
 
+# Timer untuk captcha (agar tidak stuck selamanya)
+captcha_timer_task = None
+
+# Konstanta timeout
+REQUEST_TIMEOUT = 30
+CAPTCHA_TIMEOUT = 30
+
+# ==================== FUNGSI BANTUAN ====================
 def clean_bind_text(text):
     """Bersihkan text bind info"""
-    
     # 1. Handle (Private) dan variasinya
     text = re.sub(r'\(Private\)', 'Hide information', text)
     text = re.sub(r'Bind \(Private\)', 'Hide information', text)
@@ -323,8 +331,6 @@ def clean_bind_text(text):
     text = re.sub(r'\s+', ' ', text).strip()
     
     return text
-
-# ==================== FUNGSI VALIDASI GOPAY ====================
 
 def validate_mlbb_gopay_sync(user_id, server_id):
     """Validasi akun MLBB menggunakan API GoPay"""
@@ -375,8 +381,6 @@ def validate_mlbb_gopay_sync(user_id, server_id):
         logger.error(f"❌ Error: {e}")
         return {'status': False, 'message': str(e)}
 
-# ==================== OCR ONLINE ====================
-
 async def read_number_from_photo_online(message):
     try:
         if not OCR_SPACE_API_KEY:
@@ -413,9 +417,8 @@ async def read_number_from_photo_online(message):
         logger.error(f"❌ OCR error: {e}")
         return None
 
-# ==================== CLEANUP PHOTOS ====================
-
 def cleanup_downloaded_photos():
+    """Hapus file foto sementara"""
     global downloaded_photos
     for photo_path in downloaded_photos[:]:
         try:
@@ -424,8 +427,6 @@ def cleanup_downloaded_photos():
             downloaded_photos.remove(photo_path)
         except:
             pass
-
-# ==================== FORMAT OUTPUT ====================
 
 def format_final_output(original_text, nickname, region, uid, sid, android, ios):
     """Format output final"""
@@ -470,257 +471,297 @@ Device Login:
     
     return final, reply_markup
 
-# ==================== SEND TO BOT B ====================
-
-async def send_to_bot_b(user_id, text, reply_markup=None):
+# ==================== FUNGSI KOMUNIKASI DENGAN BOT B ====================
+async def send_status_to_user(chat_id, text, reply_markup=None):
+    """Kirim pesan status ke user melalui Bot B (pesan baru)"""
     url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
     data = {
-        'chat_id': user_id,
+        'chat_id': chat_id,
         'text': text,
         'parse_mode': 'HTML'
     }
-    
     if reply_markup:
         data['reply_markup'] = json.dumps(reply_markup)
-    
     try:
         response = requests.post(url, json=data, timeout=10)
         if response.status_code == 200:
-            logger.info(f"✅ TERKIRIM KE USER {user_id}")
-            
-            # Hapus semua request untuk user ini
-            try:
-                queue_len = r.llen('pending_requests')
-                for i in range(queue_len):
-                    req_bytes = r.lindex('pending_requests', i)
-                    if req_bytes:
-                        req_id = req_bytes.decode('utf-8')
-                        req_json = r.get(req_id)
-                        if req_json:
-                            req_data = json.loads(req_json)
-                            if req_data['chat_id'] == user_id:
-                                r.lrem('pending_requests', 0, req_id)
-                                r.delete(req_id)
-                                logger.info(f"🧹 Hapus request {req_id}")
-                
-                waiting_for_result[user_id] = False
-            except Exception as e:
-                logger.error(f"❌ Gagal hapus queue: {e}")
-            
-            return True
-        return False
+            return response.json()['result']['message_id']
     except Exception as e:
-        logger.error(f"❌ Gagal kirim: {e}")
-        return False
+        logger.error(f"Gagal kirim status: {e}")
+    return None
 
-# ==================== TELEGRAM EVENT HANDLER ====================
+async def edit_status_message(chat_id, message_id, text, reply_markup=None):
+    """Edit pesan yang sudah dikirim ke user melalui Bot B"""
+    url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/editMessageText"
+    data = {
+        'chat_id': chat_id,
+        'message_id': message_id,
+        'text': text,
+        'parse_mode': 'HTML'
+    }
+    if reply_markup:
+        data['reply_markup'] = json.dumps(reply_markup)
+    try:
+        requests.post(url, json=data, timeout=10)
+    except Exception as e:
+        logger.error(f"Gagal edit pesan: {e}")
 
+# ==================== TIMEOUT CHECKER ====================
+async def timeout_checker():
+    """Loop untuk memonitor request yang melebihi batas waktu"""
+    while True:
+        now = time.time()
+        to_remove = []
+        for req_id, req_data in list(active_requests.items()):
+            if now - req_data['start_time'] > REQUEST_TIMEOUT:
+                logger.warning(f"⏰ Timeout untuk request {req_id}")
+                await edit_status_message(
+                    req_data['chat_id'],
+                    req_data['message_id'],
+                    "⌛ Request timeout. Silakan coba lagi."
+                )
+                # Hapus dari Redis
+                try:
+                    head = r.lindex('pending_requests', 0)
+                    if head and head.decode('utf-8') == req_id:
+                        r.lpop('pending_requests')
+                    r.delete(req_id)
+                except:
+                    pass
+                # Hapus dari waiting flag
+                waiting_for_result.pop(req_data['chat_id'], None)
+                to_remove.append(req_id)
+        for req_id in to_remove:
+            active_requests.pop(req_id, None)
+        await asyncio.sleep(1)
+
+# ==================== HANDLER PESAN DARI BOT A ====================
 @events.register(events.NewMessage)
 async def message_handler(event):
+    global captcha_timer_task, bot_status
+
     message = event.message
     chat_id = event.chat_id
     sender_id = event.sender_id
     text = message.text or message.message or ''
-    
+
+    # Hanya pesan dari Bot A yang diproses
     if chat_id != 7240340418 and sender_id != 7240340418:
         return
-    
-    logger.info(f"📩 Pesan dari Bot A: {text[:100]}")
-    
-    # ===== HASIL INFO DENGAN AWALAN ────────────────────── =====
+
+    logger.info(f"📩 Dari Bot A: {text[:100]}")
+
+    # ========== 1. HASIL INFO (format dengan garis) ==========
     if text.startswith('──────────────────────') and 'BIND ACCOUNT INFO' in text:
-        logger.info("✅ DAPET HASIL INFO DARI BOT A!")
-        
-        # Cari user yang menunggu
-        target_user = None
-        for uid, waiting in list(waiting_for_result.items()):
-            if waiting:
-                target_user = uid
-                break
-        
-        if not target_user:
-            req_bytes = r.lindex('pending_requests', 0)
-            if req_bytes:
-                req_id = req_bytes.decode('utf-8')
-                req_json = r.get(req_id)
-                if req_json:
-                    req_data = json.loads(req_json)
-                    target_user = req_data['chat_id']
-        
-        if target_user:
-            # Extract data
-            id_match = re.search(r'ID:?\s*(\d+)', text)
-            server_match = re.search(r'Server:?\s*(\d+)', text)
-            android_match = re.search(r'Android:?\s*(\d+)', text)
-            ios_match = re.search(r'iOS:?\s*(\d+)', text)
-            
-            uid = id_match.group(1) if id_match else 'Unknown'
-            sid = server_match.group(1) if server_match else 'Unknown'
-            android = android_match.group(1) if android_match else '0'
-            ios = ios_match.group(1) if ios_match else '0'
-            
-            # GoPay
-            gopay = validate_mlbb_gopay_sync(uid, sid)
-            
-            if gopay['status']:
-                nickname = gopay['username']
-                region = gopay['region']
-            else:
-                nickname = 'Tidak diketahui'
-                region = '🌍 Tidak diketahui'
-            
-            # Format dan kirim
-            output, markup = format_final_output(text, nickname, region, uid, sid, android, ios)
-            await send_to_bot_b(target_user, output, markup)
-        
-        return
-    
-    # ===== VERIFIKASI SUKSES =====
-    if 'verification successful' in text.lower() or 'verified' in text.lower():
-        logger.info("✅ Verifikasi sukses")
-        cleanup_downloaded_photos()
-        
-        # 🔥 AUTO RETRY: Ambil request pertama dan kirim ulang 🔥
+        logger.info("✅ Mendapatkan hasil info dari Bot A")
+        if not active_requests:
+            logger.warning("Tidak ada request aktif, hasil diabaikan")
+            return
+
+        # Ambil request yang sedang aktif (hanya satu)
+        req_id, req_info = next(iter(active_requests.items()))
+        user_id = req_info['chat_id']
+        message_id = req_info['message_id']
+
+        # Ekstrak data
+        id_match = re.search(r'ID:?\s*(\d+)', text)
+        server_match = re.search(r'Server:?\s*(\d+)', text)
+        android_match = re.search(r'Android:?\s*(\d+)', text)
+        ios_match = re.search(r'iOS:?\s*(\d+)', text)
+
+        uid = id_match.group(1) if id_match else 'Unknown'
+        sid = server_match.group(1) if server_match else 'Unknown'
+        android = android_match.group(1) if android_match else '0'
+        ios = ios_match.group(1) if ios_match else '0'
+
+        # Validasi via GoPay
+        gopay = validate_mlbb_gopay_sync(uid, sid)
+        if gopay['status']:
+            nickname = gopay['username']
+            region = gopay['region']
+        else:
+            nickname = 'Tidak diketahui'
+            region = '🌍 Tidak diketahui'
+
+        # Format output
+        output, markup = format_final_output(text, nickname, region, uid, sid, android, ios)
+
+        # Edit pesan status dengan hasil
+        await edit_status_message(user_id, message_id, output, markup)
+
+        # Bersihkan data
+        del active_requests[req_id]
+        waiting_for_result.pop(user_id, None)
+
+        # Hapus dari Redis
         try:
-            await asyncio.sleep(5)  # Kasih jeda 2 detik
-            
-            req_bytes = r.lindex('pending_requests', 0)
-            if req_bytes:
-                req_id = req_bytes.decode('utf-8')
-                req_json = r.get(req_id)
-                if req_json:
-                    req_data = json.loads(req_json)
-                    cmd = f"{req_data['command']} {req_data['args'][0]} {req_data['args'][1]}"
-                    
-                    await client.send_message(BOT_A_USERNAME, cmd)
-                    logger.info(f"🔄 AUTO-RETRY setelah verify: {cmd}")
-                    
-                    # Set waiting flag
-                    waiting_for_result[req_data['chat_id']] = True
-                    sent_requests[req_id] = time.time()
-        except Exception as e:
-            logger.error(f"❌ Gagal auto-retry: {e}")
-        
+            head = r.lindex('pending_requests', 0)
+            if head and head.decode('utf-8') == req_id:
+                r.lpop('pending_requests')
+            r.delete(req_id)
+        except:
+            pass
+
+        cleanup_downloaded_photos()
         return
-    
-    # ===== CAPTCHA =====
-    if message.photo or ('captcha' in text.lower() and re.search(r'\d{6}', text)):
-        logger.warning("🚫 CAPTCHA DETECTED!")
+
+    # ========== 2. VERIFIKASI SUKSES ==========
+    if 'verification successful' in text.lower() or '✅ Verifikasi berhasil!' in text:
+        logger.info("✅ Verifikasi sukses, auto-retry dalam 5 detik")
+
+        # Matikan timer captcha jika ada
+        if captcha_timer_task:
+            captcha_timer_task.cancel()
+            captcha_timer_task = None
+        bot_status['in_captcha'] = False
+
+        # Auto-retry untuk request yang sedang aktif
+        if active_requests:
+            await asyncio.sleep(5)
+            req_id, req_info = next(iter(active_requests.items()))
+            cmd = f"{req_info['command']} {req_info['args'][0]} {req_info['args'][1]}"
+            await client.send_message(BOT_A_USERNAME, cmd)
+            logger.info(f"🔄 Auto-retry: {cmd}")
+            # Update waktu mulai
+            req_info['start_time'] = time.time()
+        return
+
+    # ========== 3. CAPTCHA ==========
+    if (message.photo or 
+        'captcha' in text.lower() or 
+        re.search(r'\d{6}', text) or 
+        '🔒 Masukkan kode captcha' in text):
         
+        logger.warning("🚫 CAPTCHA terdeteksi!")
+        bot_status['in_captcha'] = True
+
+        # Batalkan timer sebelumnya jika ada
+        if captcha_timer_task:
+            captcha_timer_task.cancel()
+
+        # Set timer untuk mematikan status captcha jika terlalu lama
+        async def reset_captcha():
+            await asyncio.sleep(CAPTCHA_TIMEOUT)
+            bot_status['in_captcha'] = False
+            logger.info("Captcha timeout, status direset")
+        captcha_timer_task = asyncio.create_task(reset_captcha())
+
+        # Ambil kode captcha
         captcha_code = None
-        
-        # Cek di caption/text
+        # Cek di teks
         digits = re.findall(r'\d', text)
         if len(digits) >= 6:
             captcha_code = ''.join(digits[:6])
-        
-        # Cek dengan OCR
+        # Cek dengan OCR jika ada foto
         if not captcha_code and message.photo:
             captcha_code = await read_number_from_photo_online(message)
-        
+
         if captcha_code and len(captcha_code) == 6:
-            logger.info(f"✅ Code: {captcha_code}")
-            bot_status['in_captcha'] = True
-            
-            # Set waiting flag untuk user pertama di queue
-            req_bytes = r.lindex('pending_requests', 0)
-            if req_bytes:
-                req_id = req_bytes.decode('utf-8')
-                req_json = r.get(req_id)
-                if req_json:
-                    req_data = json.loads(req_json)
-                    waiting_for_result[req_data['chat_id']] = True
-            
-            # Kirim verify
+            logger.info(f"🔑 Kode captcha: {captcha_code}")
+            # Kirim verify ke Bot A
             await client.send_message(BOT_A_USERNAME, f"/verify {captcha_code}")
-            logger.info(f"📤 Verifikasi dikirim")
-            
-            await asyncio.sleep(5)
-            bot_status['in_captcha'] = False
+            logger.info("📤 Perintah verify dikirim")
         else:
-            logger.error("❌ Gagal dapat code captcha")
+            logger.error("❌ Gagal mendapatkan kode captcha")
             cleanup_downloaded_photos()
-            await asyncio.sleep(30)
-            bot_status['in_captcha'] = False
+            # Jika gagal, kita tetap biarkan status captcha, nanti timer akan mereset
 
-# ==================== QUEUE PROCESSOR ====================
-
+# ==================== PROSES ANTRIAN ====================
 async def process_queue():
     logger.info("🔄 Queue processor started")
-    
     while True:
         try:
             if not bot_status['in_captcha']:
                 req_bytes = r.lindex('pending_requests', 0)
-                
                 if req_bytes:
                     req_id = req_bytes.decode('utf-8')
                     now = time.time()
-                    
-                    # Cek rate limit
+
+                    # Rate limit: jangan kirim terlalu cepat
                     if req_id in sent_requests and now - sent_requests[req_id] < 15:
                         await asyncio.sleep(2)
                         continue
-                    
+
                     req_json = r.get(req_id)
                     if not req_json:
                         r.lpop('pending_requests')
                         continue
-                    
+
                     req_data = json.loads(req_json)
                     user_id = req_data['chat_id']
-                    
-                    # Cek apakah user sedang menunggu hasil
+
+                    # Jika user ini sedang menunggu hasil (misal dari request sebelumnya), tunda
                     if waiting_for_result.get(user_id, False):
-                        logger.info(f"⏳ User {user_id} menunggu hasil, tunda...")
+                        logger.info(f"⏳ User {user_id} masih menunggu, pindahkan ke belakang")
                         r.lpop('pending_requests')
                         r.rpush('pending_requests', req_id)
                         await asyncio.sleep(5)
                         continue
-                    
+
+                    # Kirim status "Sedang diproses" ke user
+                    status_text = "🔄 Sedang memproses permintaan Anda. Mohon tunggu..."
+                    msg_id = await send_status_to_user(user_id, status_text)
+                    if not msg_id:
+                        logger.error(f"❌ Gagal mengirim status ke user {user_id}, request dibatalkan")
+                        r.lpop('pending_requests')
+                        r.delete(req_id)
+                        continue
+
+                    # Simpan ke active_requests
+                    active_requests[req_id] = {
+                        'chat_id': user_id,
+                        'message_id': msg_id,
+                        'start_time': now,
+                        'command': req_data['command'],
+                        'args': req_data['args']
+                    }
+
+                    # Kirim perintah ke Bot A
                     cmd = f"{req_data['command']} {req_data['args'][0]} {req_data['args'][1]}"
-                    
                     await client.send_message(BOT_A_USERNAME, cmd)
-                    logger.info(f"📤 Kirim: {cmd}")
-                    
+                    logger.info(f"📤 Mengirim ke Bot A: {cmd}")
+
                     sent_requests[req_id] = now
                     waiting_for_result[user_id] = True
+            else:
+                await asyncio.sleep(1)
         except Exception as e:
-            logger.error(f"❌ Queue error: {e}")
-        
+            logger.error(f"❌ Error di process_queue: {e}")
         await asyncio.sleep(2)
 
 # ==================== MAIN ====================
-
 async def main():
-    logger.info("🚀 Starting Telethon userbot...")
-    
-    # Bersihkan queue lama
+    logger.info("🚀 Memulai userbot...")
+
+    # Bersihkan queue lama di Redis
     try:
         queue_len = r.llen('pending_requests')
         if queue_len > 0:
             logger.info(f"🧹 Membersihkan {queue_len} request lama...")
             for _ in range(queue_len):
                 r.lpop('pending_requests')
-        
         keys = r.keys('req:*')
         if keys:
             for key in keys:
                 r.delete(key)
     except Exception as e:
-        logger.error(f"❌ Gagal bersihkan queue: {e}")
-    
+        logger.error(f"❌ Gagal membersihkan Redis: {e}")
+
     try:
         await client.start()
         me = await client.get_me()
         logger.info(f"✅ Login sebagai: {me.first_name}")
-        
+
+        # Daftarkan event handler
         client.add_event_handler(message_handler)
-        
+
+        # Jalankan timeout checker
+        asyncio.create_task(timeout_checker())
+
+        # Jalankan pemrosesan antrian
         await process_queue()
-        
     except Exception as e:
-        logger.error(f"❌ Error: {e}")
+        logger.error(f"❌ Fatal error: {e}")
         raise
 
 if __name__ == "__main__":
