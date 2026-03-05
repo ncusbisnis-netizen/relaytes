@@ -22,259 +22,28 @@ API_ID = int(os.environ.get('API_ID', 0))
 API_HASH = os.environ.get('API_HASH', '')
 SESSION_STRING = os.environ.get('SESSION_STRING', '')
 BOT_B_TOKEN = os.environ.get('BOT_B_TOKEN', '')
-BOT_A_USERNAME = 'bengkelmlbb_bot'
+BOT_A_USERNAME = 'bengkelmlbb_bot'  # ganti dengan username bot A yang sebenarnya
 REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
 OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', '')
 STOK_ADMIN_URL = os.environ.get('STOK_ADMIN_URL', 'https://whatsapp.com/channel/0029VbA4PrD5fM5TMgECoE1E')
 
 # ==================== COUNTRY MAPPING SEDERHANA ====================
 country_mapping = {
-    'AF': '🇦🇫 Afghanistan',
-  'AX': '🇦🇽 Åland Islands',
-  'AL': '🇦🇱 Albania',
-  'DZ': '🇩🇿 Algeria',
-  'AS': '🇦🇸 American Samoa',
-  'AD': '🇦🇩 Andorra',
-  'AO': '🇦🇴 Angola',
-  'AI': '🇦🇮 Anguilla',
-  'AQ': '🇦🇶 Antarctica',
-  'AG': '🇦🇬 Antigua and Barbuda',
-  'AR': '🇦🇷 Argentina',
-  'AM': '🇦🇲 Armenia',
-  'AW': '🇦🇼 Aruba',
-  'AU': '🇦🇺 Australia',
-  'AT': '🇦🇹 Austria',
-  'AZ': '🇦🇿 Azerbaijan',
-  'BS': '🇧🇸 Bahamas',
-  'BH': '🇧🇭 Bahrain',
-  'BD': '🇧🇩 Bangladesh',
-  'BB': '🇧🇧 Barbados',
-  'BY': '🇧🇾 Belarus',
-  'BE': '🇧🇪 Belgium',
-  'BZ': '🇧🇿 Belize',
-  'BJ': '🇧🇯 Benin',
-  'BM': '🇧🇲 Bermuda',
-  'BT': '🇧🇹 Bhutan',
-  'BO': '🇧🇴 Bolivia, Plurinational State of bolivia',
-  'BA': '🇧🇦 Bosnia and Herzegovina',
-  'BW': '🇧🇼 Botswana',
-  'BV': '🇧🇻 Bouvet Island',
-  'BR': '🇧🇷 Brazil',
-  'IO': '🇮🇴 British Indian Ocean Territory',
-  'BN': '🇧🇳 Brunei Darussalam',
-  'BG': '🇧🇬 Bulgaria',
-  'BF': '🇧🇫 Burkina Faso',
-  'BI': '🇧🇮 Burundi',
-  'KH': '🇰🇭 Cambodia',
-  'CM': '🇨🇲 Cameroon',
-  'CA': '🇨🇦 Canada',
-  'CV': '🇨🇻 Cape Verde',
-  'KY': '🇰🇾 Cayman Islands',
-  'CF': '🇨🇫 Central African Republic',
-  'TD': '🇹🇩 Chad',
-  'CL': '🇨🇱 Chile',
-  'CN': '🇨🇳 China',
-  'CX': '🇨🇽 Christmas Island',
-  'CC': '🇨🇨 Cocos (Keeling) Islands',
-  'CO': '🇨🇴 Colombia',
-  'KM': '🇰🇲 Comoros',
-  'CG': '🇨🇬 Congo',
-  'CD': '🇨🇩 Congo, The Democratic Republic of the Congo',
-  'CK': '🇨🇰 Cook Islands',
-  'CR': '🇨🇷 Costa Rica',
-  'CI': "🇨🇮 Cote d'Ivoire",
-  'HR': '🇭🇷 Croatia',
-  'CU': '🇨🇺 Cuba',
-  'CY': '🇨🇾 Cyprus',
-  'CZ': '🇨🇿 Czech Republic',
-  'DK': '🇩🇰 Denmark',
-  'DJ': '🇩🇯 Djibouti',
-  'DM': '🇩🇲 Dominica',
-  'DO': '🇩🇴 Dominican Republic',
-  'EC': '🇪🇨 Ecuador',
-  'EG': '🇪🇬 Egypt',
-  'SV': '🇸🇻 El Salvador',
-  'GQ': '🇬🇶 Equatorial Guinea',
-  'ER': '🇪🇷 Eritrea',
-  'EE': '🇪🇪 Estonia',
-  'ET': '🇪🇹 Ethiopia',
-  'FK': '🇫🇰 Falkland Islands (Malvinas)',
-  'FO': '🇫🇴 Faroe Islands',
-  'FJ': '🇫🇯 Fiji',
-  'FI': '🇫🇮 Finland',
-  'FR': '🇫🇷 France',
-  'GF': '🇬🇫 French Guiana',
-  'PF': '🇵🇫 French Polynesia',
-  'TF': '🇹🇫 French Southern Territories',
-  'GA': '🇬🇦 Gabon',
-  'GM': '🇬🇲 Gambia',
-  'GE': '🇬🇪 Georgia',
-  'DE': '🇩🇪 Germany',
-  'GH': '🇬🇭 Ghana',
-  'GI': '🇬🇮 Gibraltar',
-  'GR': '🇬🇷 Greece',
-  'GL': '🇬🇱 Greenland',
-  'GD': '🇬🇩 Grenada',
-  'GP': '🇬🇵 Guadeloupe',
-  'GU': '🇬🇺 Guam',
-  'GT': '🇬🇹 Guatemala',
-  'GG': '🇬🇬 Guernsey',
-  'GN': '🇬🇳 Guinea',
-  'GW': '🇬🇼 Guinea-Bissau',
-  'GY': '🇬🇾 Guyana',
-  'HT': '🇭🇹 Haiti',
-  'HM': '🇭🇲 Heard Island and Mcdonald Islands',
-  'VA': '🇻🇦 Holy See (Vatican City State)',
-  'HN': '🇭🇳 Honduras',
-  'HK': '🇭🇰 Hong Kong',
-  'HU': '🇭🇺 Hungary',
-  'IS': '🇮🇸 Iceland',
-  'IN': '🇮🇳 India',
-  'ID': '🇮🇩 Indonesia',
-  'IR': '🇮🇷 Iran, Islamic Republic of Persian Gulf',
-  'IQ': '🇮🇶 Iraq',
-  'IE': '🇮🇪 Ireland',
-  'IM': '🇮🇲 Isle of Man',
-  'IL': '🇮🇱 Israel',
-  'IT': '🇮🇹 Italy',
-  'JM': '🇯🇲 Jamaica',
-  'JP': '🇯🇵 Japan',
-  'JE': '🇯🇪 Jersey',
-  'JO': '🇯🇴 Jordan',
-  'KZ': '🇰🇿 Kazakhstan',
-  'KE': '🇰🇪 Kenya',
-  'KI': '🇰🇮 Kiribati',
-  'KP': "🇰🇵 Korea, Democratic People's Republic of Korea",
-  'KR': '🇰🇷 Korea, Republic of South Korea',
-  'XK': '🇽🇰 Kosovo',
-  'KW': '🇰🇼 Kuwait',
-  'KG': '🇰🇬 Kyrgyzstan',
-  'LA': '🇱🇦 Laos',
-  'LV': '🇱🇻 Latvia',
-  'LB': '🇱🇧 Lebanon',
-  'LS': '🇱🇸 Lesotho',
-  'LR': '🇱🇷 Liberia',
-  'LY': '🇱🇾 Libyan Arab Jamahiriya',
-  'LI': '🇱🇮 Liechtenstein',
-  'LT': '🇱🇹 Lithuania',
-  'LU': '🇱🇺 Luxembourg',
-  'MO': '🇲🇴 Macao',
-  'MK': '🇲🇰 Macedonia',
-  'MG': '🇲🇬 Madagascar',
-  'MW': '🇲🇼 Malawi',
-  'MY': '🇲🇾 Malaysia',
-  'MV': '🇲🇻 Maldives',
-  'ML': '🇲🇱 Mali',
-  'MT': '🇲🇹 Malta',
-  'MH': '🇲🇭 Marshall Islands',
-  'MQ': '🇲🇶 Martinique',
-  'MR': '🇲🇷 Mauritania',
-  'MU': '🇲🇺 Mauritius',
-  'YT': '🇾🇹 Mayotte',
-  'MX': '🇲🇽 Mexico',
-  'FM': '🇫🇲 Micronesia, Federated States of Micronesia',
-  'MD': '🇲🇩 Moldova',
-  'MC': '🇲🇨 Monaco',
-  'MN': '🇲🇳 Mongolia',
-  'ME': '🇲🇪 Montenegro',
-  'MS': '🇲🇸 Montserrat',
-  'MA': '🇲🇦 Morocco',
-  'MZ': '🇲🇿 Mozambique',
-  'MM': '🇲🇲 Myanmar',
-  'NA': '🇳🇦 Namibia',
-  'NR': '🇳🇷 Nauru',
-  'NP': '🇳🇵 Nepal',
-  'NL': '🇳🇱 Netherlands',
-  'AN': 'Netherlands Antilles',
-  'NC': '🇳🇨 New Caledonia',
-  'NZ': '🇳🇿 New Zealand',
-  'NI': '🇳🇮 Nicaragua',
-  'NE': '🇳🇪 Niger',
-  'NG': '🇳🇬 Nigeria',
-  'NU': '🇳🇺 Niue',
-  'NF': '🇳🇫 Norfolk Island',
-  'MP': '🇲🇵 Northern Mariana Islands',
-  'NO': '🇳🇴 Norway',
-  'OM': '🇴🇲 Oman',
-  'PK': '🇵🇰 Pakistan',
-  'PW': '🇵🇼 Palau',
-  'PS': '🇵🇸 Palestinian Territory, Occupied',
-  'PA': '🇵🇦 Panama',
-  'PG': '🇵🇬 Papua New Guinea',
-  'PY': '🇵🇾 Paraguay',
-  'PE': '🇵🇪 Peru',
-  'PH': '🇵🇭 Philippines',
-  'PN': '🇵🇳 Pitcairn',
-  'PL': '🇵🇱 Poland',
-  'PT': '🇵🇹 Portugal',
-  'PR': '🇵🇷 Puerto Rico',
-  'QA': '🇶🇦 Qatar',
-  'RO': '🇷🇴 Romania',
-  'RU': '🇷🇺 Russia',
-  'RW': '🇷🇼 Rwanda',
-  'RE': '🇷🇪 Reunion',
-  'BL': '🇧🇱 Saint Barthelemy',
-  'SH': '🇸🇭 Saint Helena, Ascension and Tristan Da Cunha',
-  'KN': '🇰🇳 Saint Kitts and Nevis',
-  'LC': '🇱🇨 Saint Lucia',
-  'MF': '🇲🇫 Saint Martin',
-  'PM': '🇵🇲 Saint Pierre and Miquelon',
-  'VC': '🇻🇨 Saint Vincent and the Grenadines',
-  'WS': '🇼🇸 Samoa',
-  'SM': '🇸🇲 San Marino',
-  'ST': '🇸🇹 Sao Tome and Principe',
-  'SA': '🇸🇦 Saudi Arabia',
-  'SN': '🇸🇳 Senegal',
-  'RS': '🇷🇸 Serbia',
-  'SC': '🇸🇨 Seychelles',
-  'SL': '🇸🇱 Sierra Leone',
-  'SG': '🇸🇬 Singapore',
-  'SK': '🇸🇰 Slovakia',
-  'SI': '🇸🇮 Slovenia',
-  'SB': '🇸🇧 Solomon Islands',
-  'SO': '🇸🇴 Somalia',
-  'ZA': '🇿🇦 South Africa',
-  'SS': '🇸🇸 South Sudan',
-  'GS': '🇬🇸 South Georgia and the South Sandwich Islands',
-  'ES': '🇪🇸 Spain',
-  'LK': '🇱🇰 Sri Lanka',
-  'SD': '🇸🇩 Sudan',
-  'SR': '🇸🇷 Suriname',
-  'SJ': '🇸🇯 Svalbard and Jan Mayen',
-  'SZ': '🇸🇿 Eswatini',
-  'SE': '🇸🇪 Sweden',
-  'CH': '🇨🇭 Switzerland',
-  'SY': '🇸🇾 Syrian Arab Republic',
-  'TW': '🇹🇼 Taiwan',
-  'TJ': '🇹🇯 Tajikistan',
-  'TZ': '🇹🇿 Tanzania, United Republic of Tanzania',
-  'TH': '🇹🇭 Thailand',
-  'TL': '🇹🇱 Timor-Leste',
-  'TG': '🇹🇬 Togo',
-  'TK': '🇹🇰 Tokelau',
-  'TO': '🇹🇴 Tonga',
-  'TT': '🇹🇹 Trinidad and Tobago',
-  'TN': '🇹🇳 Tunisia',
-  'TR': '🇹🇷 Turkey',
-  'TM': '🇹🇲 Turkmenistan',
-  'TC': '🇹🇨 Turks and Caicos Islands',
-  'TV': '🇹🇻 Tuvalu',
-  'UG': '🇺🇬 Uganda',
-  'UA': '🇺🇦 Ukraine',
-  'AE': '🇦🇪 United Arab Emirates',
-  'GB': '🇬🇧 United Kingdom',
-  'US': '🇺🇸 United States',
-  'UY': '🇺🇾 Uruguay',
-  'UZ': '🇺🇿 Uzbekistan',
-  'VU': '🇻🇺 Vanuatu',
-  'VE': '🇻🇪 Venezuela, Bolivarian Republic of Venezuela',
-  'VN': '🇻🇳 Vietnam',
-  'VG': '🇻🇬 Virgin Islands, British',
-  'VI': '🇻🇮 Virgin Islands, U.S.',
-  'WF': '🇼🇫 Wallis and Futuna',
-  'YE': '🇾🇪 Yemen',
-  'ZM': '🇿🇲 Zambia',
-  'ZW': '🇿🇼 Zimbabwe',
+    'ID': '🇮🇩 Indonesia',
+    'SG': '🇸🇬 Singapore',
+    'MY': '🇲🇾 Malaysia',
+    'PH': '🇵🇭 Philippines',
+    'TH': '🇹🇭 Thailand',
+    'VN': '🇻🇳 Vietnam',
+    'MM': '🇲🇲 Myanmar',
+    'KH': '🇰🇭 Cambodia',
+    'LA': '🇱🇦 Laos',
+    'BN': '🇧🇳 Brunei',
+    'US': '🇺🇸 United States',
+    'JP': '🇯🇵 Japan',
+    'KR': '🇰🇷 South Korea',
+    'CN': '🇨🇳 China',
+    'IN': '🇮🇳 India',
 }
 
 # Validasi environment
@@ -382,6 +151,7 @@ def validate_mlbb_gopay_sync(user_id, server_id):
         return {'status': False, 'message': str(e)}
 
 async def read_number_from_photo_online(message):
+    """OCR menggunakan ocr.space dengan timeout lebih panjang (60 detik)"""
     try:
         if not OCR_SPACE_API_KEY:
             return None
@@ -401,7 +171,7 @@ async def read_number_from_photo_online(message):
                 'language': 'eng',
                 'OCREngine': '2'
             },
-            timeout=30
+            timeout=60  # diperpanjang menjadi 60 detik
         )
         
         if response.status_code == 200:
@@ -648,23 +418,55 @@ async def message_handler(event):
 
         # Ambil kode captcha
         captcha_code = None
-        # Cek di teks
+
+        # Cek di teks terlebih dahulu (misalnya jika ada angka 6 digit)
         digits = re.findall(r'\d', text)
         if len(digits) >= 6:
             captcha_code = ''.join(digits[:6])
-        # Cek dengan OCR jika ada foto
+            logger.info(f"🔑 Kode captcha dari teks: {captcha_code}")
+
+        # Jika tidak ada di teks dan ada foto, coba OCR
         if not captcha_code and message.photo:
-            captcha_code = await read_number_from_photo_online(message)
+            try:
+                captcha_code = await read_number_from_photo_online(message)
+                if captcha_code:
+                    logger.info(f"🔑 Kode captcha dari OCR: {captcha_code}")
+            except Exception as e:
+                logger.error(f"❌ OCR gagal: {e}")
 
         if captcha_code and len(captcha_code) == 6:
-            logger.info(f"🔑 Kode captcha: {captcha_code}")
             # Kirim verify ke Bot A
             await client.send_message(BOT_A_USERNAME, f"/verify {captcha_code}")
             logger.info("📤 Perintah verify dikirim")
         else:
             logger.error("❌ Gagal mendapatkan kode captcha")
             cleanup_downloaded_photos()
-            # Jika gagal, kita tetap biarkan status captcha, nanti timer akan mereset
+
+            # Jika ada request aktif, batalkan sekarang juga (kirim pesan error)
+            if active_requests:
+                req_id, req_info = next(iter(active_requests.items()))
+                await edit_status_message(
+                    req_info['chat_id'],
+                    req_info['message_id'],
+                    "❌ Gagal membaca captcha. Silakan coba lagi nanti."
+                )
+                # Hapus dari Redis
+                try:
+                    head = r.lindex('pending_requests', 0)
+                    if head and head.decode('utf-8') == req_id:
+                        r.lpop('pending_requests')
+                    r.delete(req_id)
+                except:
+                    pass
+                # Hapus dari waiting flag
+                waiting_for_result.pop(req_info['chat_id'], None)
+                del active_requests[req_id]
+
+            # Reset status captcha lebih cepat
+            bot_status['in_captcha'] = False
+            if captcha_timer_task:
+                captcha_timer_task.cancel()
+                captcha_timer_task = None
 
 # ==================== PROSES ANTRIAN ====================
 async def process_queue():
