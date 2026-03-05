@@ -29,21 +29,252 @@ STOK_ADMIN_URL = os.environ.get('STOK_ADMIN_URL', 'https://whatsapp.com/channel/
 
 # ==================== COUNTRY MAPPING SEDERHANA ====================
 country_mapping = {
-    'ID': '🇮🇩 Indonesia',
-    'SG': '🇸🇬 Singapore',
-    'MY': '🇲🇾 Malaysia',
-    'PH': '🇵🇭 Philippines',
-    'TH': '🇹🇭 Thailand',
-    'VN': '🇻🇳 Vietnam',
-    'MM': '🇲🇲 Myanmar',
-    'KH': '🇰🇭 Cambodia',
-    'LA': '🇱🇦 Laos',
-    'BN': '🇧🇳 Brunei',
-    'US': '🇺🇸 United States',
-    'JP': '🇯🇵 Japan',
-    'KR': '🇰🇷 South Korea',
-    'CN': '🇨🇳 China',
-    'IN': '🇮🇳 India',
+    'AF': '🇦🇫 Afghanistan',
+  'AX': '🇦🇽 Åland Islands',
+  'AL': '🇦🇱 Albania',
+  'DZ': '🇩🇿 Algeria',
+  'AS': '🇦🇸 American Samoa',
+  'AD': '🇦🇩 Andorra',
+  'AO': '🇦🇴 Angola',
+  'AI': '🇦🇮 Anguilla',
+  'AQ': '🇦🇶 Antarctica',
+  'AG': '🇦🇬 Antigua and Barbuda',
+  'AR': '🇦🇷 Argentina',
+  'AM': '🇦🇲 Armenia',
+  'AW': '🇦🇼 Aruba',
+  'AU': '🇦🇺 Australia',
+  'AT': '🇦🇹 Austria',
+  'AZ': '🇦🇿 Azerbaijan',
+  'BS': '🇧🇸 Bahamas',
+  'BH': '🇧🇭 Bahrain',
+  'BD': '🇧🇩 Bangladesh',
+  'BB': '🇧🇧 Barbados',
+  'BY': '🇧🇾 Belarus',
+  'BE': '🇧🇪 Belgium',
+  'BZ': '🇧🇿 Belize',
+  'BJ': '🇧🇯 Benin',
+  'BM': '🇧🇲 Bermuda',
+  'BT': '🇧🇹 Bhutan',
+  'BO': '🇧🇴 Bolivia, Plurinational State of bolivia',
+  'BA': '🇧🇦 Bosnia and Herzegovina',
+  'BW': '🇧🇼 Botswana',
+  'BV': '🇧🇻 Bouvet Island',
+  'BR': '🇧🇷 Brazil',
+  'IO': '🇮🇴 British Indian Ocean Territory',
+  'BN': '🇧🇳 Brunei Darussalam',
+  'BG': '🇧🇬 Bulgaria',
+  'BF': '🇧🇫 Burkina Faso',
+  'BI': '🇧🇮 Burundi',
+  'KH': '🇰🇭 Cambodia',
+  'CM': '🇨🇲 Cameroon',
+  'CA': '🇨🇦 Canada',
+  'CV': '🇨🇻 Cape Verde',
+  'KY': '🇰🇾 Cayman Islands',
+  'CF': '🇨🇫 Central African Republic',
+  'TD': '🇹🇩 Chad',
+  'CL': '🇨🇱 Chile',
+  'CN': '🇨🇳 China',
+  'CX': '🇨🇽 Christmas Island',
+  'CC': '🇨🇨 Cocos (Keeling) Islands',
+  'CO': '🇨🇴 Colombia',
+  'KM': '🇰🇲 Comoros',
+  'CG': '🇨🇬 Congo',
+  'CD': '🇨🇩 Congo, The Democratic Republic of the Congo',
+  'CK': '🇨🇰 Cook Islands',
+  'CR': '🇨🇷 Costa Rica',
+  'CI': "🇨🇮 Cote d'Ivoire",
+  'HR': '🇭🇷 Croatia',
+  'CU': '🇨🇺 Cuba',
+  'CY': '🇨🇾 Cyprus',
+  'CZ': '🇨🇿 Czech Republic',
+  'DK': '🇩🇰 Denmark',
+  'DJ': '🇩🇯 Djibouti',
+  'DM': '🇩🇲 Dominica',
+  'DO': '🇩🇴 Dominican Republic',
+  'EC': '🇪🇨 Ecuador',
+  'EG': '🇪🇬 Egypt',
+  'SV': '🇸🇻 El Salvador',
+  'GQ': '🇬🇶 Equatorial Guinea',
+  'ER': '🇪🇷 Eritrea',
+  'EE': '🇪🇪 Estonia',
+  'ET': '🇪🇹 Ethiopia',
+  'FK': '🇫🇰 Falkland Islands (Malvinas)',
+  'FO': '🇫🇴 Faroe Islands',
+  'FJ': '🇫🇯 Fiji',
+  'FI': '🇫🇮 Finland',
+  'FR': '🇫🇷 France',
+  'GF': '🇬🇫 French Guiana',
+  'PF': '🇵🇫 French Polynesia',
+  'TF': '🇹🇫 French Southern Territories',
+  'GA': '🇬🇦 Gabon',
+  'GM': '🇬🇲 Gambia',
+  'GE': '🇬🇪 Georgia',
+  'DE': '🇩🇪 Germany',
+  'GH': '🇬🇭 Ghana',
+  'GI': '🇬🇮 Gibraltar',
+  'GR': '🇬🇷 Greece',
+  'GL': '🇬🇱 Greenland',
+  'GD': '🇬🇩 Grenada',
+  'GP': '🇬🇵 Guadeloupe',
+  'GU': '🇬🇺 Guam',
+  'GT': '🇬🇹 Guatemala',
+  'GG': '🇬🇬 Guernsey',
+  'GN': '🇬🇳 Guinea',
+  'GW': '🇬🇼 Guinea-Bissau',
+  'GY': '🇬🇾 Guyana',
+  'HT': '🇭🇹 Haiti',
+  'HM': '🇭🇲 Heard Island and Mcdonald Islands',
+  'VA': '🇻🇦 Holy See (Vatican City State)',
+  'HN': '🇭🇳 Honduras',
+  'HK': '🇭🇰 Hong Kong',
+  'HU': '🇭🇺 Hungary',
+  'IS': '🇮🇸 Iceland',
+  'IN': '🇮🇳 India',
+  'ID': '🇮🇩 Indonesia',
+  'IR': '🇮🇷 Iran, Islamic Republic of Persian Gulf',
+  'IQ': '🇮🇶 Iraq',
+  'IE': '🇮🇪 Ireland',
+  'IM': '🇮🇲 Isle of Man',
+  'IL': '🇮🇱 Israel',
+  'IT': '🇮🇹 Italy',
+  'JM': '🇯🇲 Jamaica',
+  'JP': '🇯🇵 Japan',
+  'JE': '🇯🇪 Jersey',
+  'JO': '🇯🇴 Jordan',
+  'KZ': '🇰🇿 Kazakhstan',
+  'KE': '🇰🇪 Kenya',
+  'KI': '🇰🇮 Kiribati',
+  'KP': "🇰🇵 Korea, Democratic People's Republic of Korea",
+  'KR': '🇰🇷 Korea, Republic of South Korea',
+  'XK': '🇽🇰 Kosovo',
+  'KW': '🇰🇼 Kuwait',
+  'KG': '🇰🇬 Kyrgyzstan',
+  'LA': '🇱🇦 Laos',
+  'LV': '🇱🇻 Latvia',
+  'LB': '🇱🇧 Lebanon',
+  'LS': '🇱🇸 Lesotho',
+  'LR': '🇱🇷 Liberia',
+  'LY': '🇱🇾 Libyan Arab Jamahiriya',
+  'LI': '🇱🇮 Liechtenstein',
+  'LT': '🇱🇹 Lithuania',
+  'LU': '🇱🇺 Luxembourg',
+  'MO': '🇲🇴 Macao',
+  'MK': '🇲🇰 Macedonia',
+  'MG': '🇲🇬 Madagascar',
+  'MW': '🇲🇼 Malawi',
+  'MY': '🇲🇾 Malaysia',
+  'MV': '🇲🇻 Maldives',
+  'ML': '🇲🇱 Mali',
+  'MT': '🇲🇹 Malta',
+  'MH': '🇲🇭 Marshall Islands',
+  'MQ': '🇲🇶 Martinique',
+  'MR': '🇲🇷 Mauritania',
+  'MU': '🇲🇺 Mauritius',
+  'YT': '🇾🇹 Mayotte',
+  'MX': '🇲🇽 Mexico',
+  'FM': '🇫🇲 Micronesia, Federated States of Micronesia',
+  'MD': '🇲🇩 Moldova',
+  'MC': '🇲🇨 Monaco',
+  'MN': '🇲🇳 Mongolia',
+  'ME': '🇲🇪 Montenegro',
+  'MS': '🇲🇸 Montserrat',
+  'MA': '🇲🇦 Morocco',
+  'MZ': '🇲🇿 Mozambique',
+  'MM': '🇲🇲 Myanmar',
+  'NA': '🇳🇦 Namibia',
+  'NR': '🇳🇷 Nauru',
+  'NP': '🇳🇵 Nepal',
+  'NL': '🇳🇱 Netherlands',
+  'AN': 'Netherlands Antilles',
+  'NC': '🇳🇨 New Caledonia',
+  'NZ': '🇳🇿 New Zealand',
+  'NI': '🇳🇮 Nicaragua',
+  'NE': '🇳🇪 Niger',
+  'NG': '🇳🇬 Nigeria',
+  'NU': '🇳🇺 Niue',
+  'NF': '🇳🇫 Norfolk Island',
+  'MP': '🇲🇵 Northern Mariana Islands',
+  'NO': '🇳🇴 Norway',
+  'OM': '🇴🇲 Oman',
+  'PK': '🇵🇰 Pakistan',
+  'PW': '🇵🇼 Palau',
+  'PS': '🇵🇸 Palestinian Territory, Occupied',
+  'PA': '🇵🇦 Panama',
+  'PG': '🇵🇬 Papua New Guinea',
+  'PY': '🇵🇾 Paraguay',
+  'PE': '🇵🇪 Peru',
+  'PH': '🇵🇭 Philippines',
+  'PN': '🇵🇳 Pitcairn',
+  'PL': '🇵🇱 Poland',
+  'PT': '🇵🇹 Portugal',
+  'PR': '🇵🇷 Puerto Rico',
+  'QA': '🇶🇦 Qatar',
+  'RO': '🇷🇴 Romania',
+  'RU': '🇷🇺 Russia',
+  'RW': '🇷🇼 Rwanda',
+  'RE': '🇷🇪 Reunion',
+  'BL': '🇧🇱 Saint Barthelemy',
+  'SH': '🇸🇭 Saint Helena, Ascension and Tristan Da Cunha',
+  'KN': '🇰🇳 Saint Kitts and Nevis',
+  'LC': '🇱🇨 Saint Lucia',
+  'MF': '🇲🇫 Saint Martin',
+  'PM': '🇵🇲 Saint Pierre and Miquelon',
+  'VC': '🇻🇨 Saint Vincent and the Grenadines',
+  'WS': '🇼🇸 Samoa',
+  'SM': '🇸🇲 San Marino',
+  'ST': '🇸🇹 Sao Tome and Principe',
+  'SA': '🇸🇦 Saudi Arabia',
+  'SN': '🇸🇳 Senegal',
+  'RS': '🇷🇸 Serbia',
+  'SC': '🇸🇨 Seychelles',
+  'SL': '🇸🇱 Sierra Leone',
+  'SG': '🇸🇬 Singapore',
+  'SK': '🇸🇰 Slovakia',
+  'SI': '🇸🇮 Slovenia',
+  'SB': '🇸🇧 Solomon Islands',
+  'SO': '🇸🇴 Somalia',
+  'ZA': '🇿🇦 South Africa',
+  'SS': '🇸🇸 South Sudan',
+  'GS': '🇬🇸 South Georgia and the South Sandwich Islands',
+  'ES': '🇪🇸 Spain',
+  'LK': '🇱🇰 Sri Lanka',
+  'SD': '🇸🇩 Sudan',
+  'SR': '🇸🇷 Suriname',
+  'SJ': '🇸🇯 Svalbard and Jan Mayen',
+  'SZ': '🇸🇿 Eswatini',
+  'SE': '🇸🇪 Sweden',
+  'CH': '🇨🇭 Switzerland',
+  'SY': '🇸🇾 Syrian Arab Republic',
+  'TW': '🇹🇼 Taiwan',
+  'TJ': '🇹🇯 Tajikistan',
+  'TZ': '🇹🇿 Tanzania, United Republic of Tanzania',
+  'TH': '🇹🇭 Thailand',
+  'TL': '🇹🇱 Timor-Leste',
+  'TG': '🇹🇬 Togo',
+  'TK': '🇹🇰 Tokelau',
+  'TO': '🇹🇴 Tonga',
+  'TT': '🇹🇹 Trinidad and Tobago',
+  'TN': '🇹🇳 Tunisia',
+  'TR': '🇹🇷 Turkey',
+  'TM': '🇹🇲 Turkmenistan',
+  'TC': '🇹🇨 Turks and Caicos Islands',
+  'TV': '🇹🇻 Tuvalu',
+  'UG': '🇺🇬 Uganda',
+  'UA': '🇺🇦 Ukraine',
+  'AE': '🇦🇪 United Arab Emirates',
+  'GB': '🇬🇧 United Kingdom',
+  'US': '🇺🇸 United States',
+  'UY': '🇺🇾 Uruguay',
+  'UZ': '🇺🇿 Uzbekistan',
+  'VU': '🇻🇺 Vanuatu',
+  'VE': '🇻🇪 Venezuela, Bolivarian Republic of Venezuela',
+  'VN': '🇻🇳 Vietnam',
+  'VG': '🇻🇬 Virgin Islands, British',
+  'VI': '🇻🇮 Virgin Islands, U.S.',
+  'WF': '🇼🇫 Wallis and Futuna',
+  'YE': '🇾🇪 Yemen',
+  'ZM': '🇿🇲 Zambia',
+  'ZW': '🇿🇼 Zimbabwe',
 }
 
 # Validasi environment
@@ -219,8 +450,7 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios)
         if not found:
             bind_info.append(f"• {kw} : empty.")
     
-    final = f"""INFORMASI AKUN
-
+    final = f"""INFORMATION ACCOUNT:
 ID: {uid}
 Server: {sid}
 Nickname: {nickname}
@@ -230,8 +460,7 @@ BIND INFO:
 {chr(10).join(bind_info)}
 
 Device Login:
-• Android: {android} perangkat
-• iOS: {ios} perangkat"""
+• Android: {android}  iOS: {ios}"""
 
     reply_markup = {
         'inline_keyboard': [
@@ -241,14 +470,14 @@ Device Login:
     
     return final, reply_markup
 
-# ==================== FUNGSI KOMUNIKASI DENGAN BOT B ====================
+# ==================== FUNGSI KOMUNIKASI DENGAN BOT B (dengan logging, tanpa parse_mode) ====================
 async def send_status_to_user(chat_id, text, reply_markup=None):
     """Kirim pesan status ke user melalui Bot B (pesan baru)"""
     url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
     data = {
         'chat_id': chat_id,
         'text': text,
-        # parse_mode dihapus untuk menghindari error karakter khusus
+        # parse_mode dihapus (None) untuk menghindari error karakter khusus
     }
     if reply_markup:
         data['reply_markup'] = json.dumps(reply_markup)
@@ -272,7 +501,7 @@ async def edit_status_message(chat_id, message_id, text, reply_markup=None):
         'chat_id': chat_id,
         'message_id': message_id,
         'text': text,
-        # parse_mode dihapus
+        # parse_mode dihapus (None)
     }
     if reply_markup:
         data['reply_markup'] = json.dumps(reply_markup)
@@ -291,6 +520,7 @@ async def timeout_checker():
     """Loop untuk memonitor request yang melebihi batas waktu, 
        namun ditangguhkan selama captcha berlangsung."""
     while True:
+        # Jika sedang dalam captcha, timeout ditangguhkan
         if bot_status['in_captcha']:
             await asyncio.sleep(1)
             continue
@@ -305,6 +535,7 @@ async def timeout_checker():
                     req_data['message_id'],
                     "Request timeout. Silakan coba lagi."
                 )
+                # Hapus dari Redis
                 try:
                     head = r.lindex('pending_requests', 0)
                     if head and head.decode('utf-8') == req_id:
@@ -313,6 +544,7 @@ async def timeout_checker():
                     logger.info(f"🗑️ Request {req_id} dihapus dari Redis karena timeout")
                 except Exception as e:
                     logger.error(f"❌ Gagal hapus Redis saat timeout: {e}")
+                # Hapus dari waiting flag
                 waiting_for_result.pop(req_data['chat_id'], None)
                 to_remove.append(req_id)
         for req_id in to_remove:
@@ -330,20 +562,22 @@ async def message_handler(event):
     sender_id = event.sender_id
     text = message.text or message.message or ''
 
-    # Hanya pesan dari Bot A
+    # Hanya pesan dari Bot A yang diproses
     if chat_id != 7240340418 and sender_id != 7240340418:
         return
 
     logger.info(f"📩 Dari Bot A: {text[:100]}")
 
-    # ========== 1. HASIL INFO ==========
+    # ========== 1. HASIL INFO (format dengan garis) ==========
     if text.startswith('──────────────────────') and 'BIND ACCOUNT INFO' in text:
         logger.info("✅ Mendapatkan hasil info dari Bot A")
         
+        # Cek apakah ada request aktif
         if not active_requests:
             logger.warning("❌ Tidak ada request aktif, hasil diabaikan")
             return
 
+        # Ambil request yang sedang aktif (hanya satu)
         req_id, req_info = next(iter(active_requests.items()))
         user_id = req_info['chat_id']
         message_id = req_info['message_id']
@@ -369,11 +603,8 @@ async def message_handler(event):
             nickname = 'Tidak diketahui'
             region = '🌍 Tidak diketahui'
 
-        # 🔹 Bersihkan teks asli sebelum dipakai
-        cleaned_text = clean_bind_text(text)
-
-        # Format output dengan teks yang sudah dibersihkan
-        output, markup = format_final_output(cleaned_text, nickname, region, uid, sid, android, ios)
+        # Format output
+        output, markup = format_final_output(text, nickname, region, uid, sid, android, ios)
 
         # Edit pesan status dengan hasil
         await edit_status_message(user_id, message_id, output, markup)
@@ -402,17 +633,21 @@ async def message_handler(event):
     # ========== 2. VERIFIKASI SUKSES ==========
     if 'verification successful' in text.lower() or '✅ Verifikasi berhasil!' in text:
         logger.info("✅ Verifikasi sukses, auto-retry dalam 5 detik")
+
+        # Matikan timer captcha jika ada
         if captcha_timer_task:
             captcha_timer_task.cancel()
             captcha_timer_task = None
         bot_status['in_captcha'] = False
 
+        # Auto-retry untuk request yang sedang aktif
         if active_requests:
             await asyncio.sleep(5)
             req_id, req_info = next(iter(active_requests.items()))
             cmd = f"{req_info['command']} {req_info['args'][0]} {req_info['args'][1]}"
             await client.send_message(BOT_A_USERNAME, cmd)
             logger.info(f"🔄 Auto-retry: {cmd}")
+            # Update waktu mulai
             req_info['start_time'] = time.time()
         else:
             logger.warning("⚠️ Tidak ada request aktif untuk auto-retry")
@@ -427,6 +662,7 @@ async def message_handler(event):
         logger.warning("🚫 CAPTCHA terdeteksi!")
         bot_status['in_captcha'] = True
 
+        # Reset timeout untuk request yang sedang aktif (beri waktu lebih)
         if active_requests:
             for req_id, req_info in active_requests.items():
                 req_info['start_time'] = time.time()
@@ -434,23 +670,29 @@ async def message_handler(event):
         else:
             logger.warning("⚠️ Captcha terdeteksi tapi tidak ada request aktif")
 
+        # Batalkan timer sebelumnya jika ada
         if captcha_timer_task:
             captcha_timer_task.cancel()
 
+        # Set timer untuk mematikan status captcha jika terlalu lama
         async def reset_captcha():
             await asyncio.sleep(CAPTCHA_TIMEOUT)
             bot_status['in_captcha'] = False
             logger.info("Captcha timeout, status direset")
         captcha_timer_task = asyncio.create_task(reset_captcha())
 
+        # Ambil kode captcha
         captcha_code = None
+
+        # Cek di teks terlebih dahulu
         digits = re.findall(r'\d', text)
         if len(digits) >= 6:
             captcha_code = ''.join(digits[:6])
             logger.info(f"🔑 Kode captcha dari teks: {captcha_code}")
 
+        # Jika tidak ada di teks dan ada foto, coba OCR dengan retry
         if not captcha_code and message.photo:
-            for attempt in range(2):
+            for attempt in range(2):  # Coba maksimal 2 kali
                 try:
                     logger.info(f"📸 Percobaan OCR ke-{attempt+1}")
                     captcha_code = await read_number_from_photo_online(message)
@@ -462,15 +704,17 @@ async def message_handler(event):
                 except Exception as e:
                     logger.error(f"❌ OCR percobaan {attempt+1} error: {e}")
                 if attempt == 0:
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(2)  # jeda sebelum retry
 
         if captcha_code and len(captcha_code) == 6:
+            # Kirim verify ke Bot A
             await client.send_message(BOT_A_USERNAME, f"/verify {captcha_code}")
             logger.info("📤 Perintah verify dikirim")
         else:
             logger.error("❌ Gagal mendapatkan kode captcha setelah 2 percobaan")
             cleanup_downloaded_photos()
 
+            # Jika ada request aktif, batalkan sekarang juga
             if active_requests:
                 req_id, req_info = next(iter(active_requests.items()))
                 await edit_status_message(
@@ -478,6 +722,7 @@ async def message_handler(event):
                     req_info['message_id'],
                     "Gagal memproses request. Coba lagi."
                 )
+                # Hapus dari Redis
                 try:
                     head = r.lindex('pending_requests', 0)
                     if head and head.decode('utf-8') == req_id:
@@ -486,10 +731,12 @@ async def message_handler(event):
                     logger.info(f"🗑️ Request {req_id} dihapus dari Redis karena gagal captcha")
                 except Exception as e:
                     logger.error(f"❌ Gagal hapus Redis: {e}")
+                # Hapus dari waiting flag
                 waiting_for_result.pop(req_info['chat_id'], None)
                 del active_requests[req_id]
                 logger.info(f"🗑️ Request {req_id} dihapus dari active_requests karena gagal captcha")
 
+            # Reset status captcha lebih cepat
             bot_status['in_captcha'] = False
             if captcha_timer_task:
                 captcha_timer_task.cancel()
@@ -506,6 +753,7 @@ async def process_queue():
                     req_id = req_bytes.decode('utf-8')
                     now = time.time()
 
+                    # Rate limit: jangan kirim terlalu cepat
                     if req_id in sent_requests and now - sent_requests[req_id] < 15:
                         await asyncio.sleep(2)
                         continue
@@ -520,6 +768,7 @@ async def process_queue():
                     user_id = req_data['chat_id']
                     logger.info(f"📋 Memproses request {req_id} dari user {user_id}")
 
+                    # Jika user ini sedang menunggu hasil (misal dari request sebelumnya), tunda
                     if waiting_for_result.get(user_id, False):
                         logger.info(f"⏳ User {user_id} masih menunggu, pindahkan ke belakang")
                         r.lpop('pending_requests')
@@ -527,6 +776,7 @@ async def process_queue():
                         await asyncio.sleep(5)
                         continue
 
+                    # Kirim status "Sedang diproses" ke user
                     status_text = "Proses request..."
                     msg_id = await send_status_to_user(user_id, status_text)
                     if not msg_id:
@@ -535,6 +785,7 @@ async def process_queue():
                         r.delete(req_id)
                         continue
 
+                    # Simpan ke active_requests
                     active_requests[req_id] = {
                         'chat_id': user_id,
                         'message_id': msg_id,
@@ -544,6 +795,7 @@ async def process_queue():
                     }
                     logger.info(f"✅ Request {req_id} disimpan ke active_requests dengan message_id {msg_id}")
 
+                    # Kirim perintah ke Bot A
                     cmd = f"{req_data['command']} {req_data['args'][0]} {req_data['args'][1]}"
                     await client.send_message(BOT_A_USERNAME, cmd)
                     logger.info(f"📤 Mengirim ke Bot A: {cmd}")
@@ -559,6 +811,8 @@ async def process_queue():
 # ==================== MAIN ====================
 async def main():
     logger.info("🚀 Memulai userbot...")
+
+    # Bersihkan queue lama di Redis
     try:
         queue_len = r.llen('pending_requests')
         if queue_len > 0:
@@ -578,8 +832,13 @@ async def main():
         me = await client.get_me()
         logger.info(f"✅ Login sebagai: {me.first_name}")
 
+        # Daftarkan event handler
         client.add_event_handler(message_handler)
+
+        # Jalankan timeout checker
         asyncio.create_task(timeout_checker())
+
+        # Jalankan pemrosesan antrian
         await process_queue()
     except Exception as e:
         logger.error(f"❌ Fatal error: {e}")
