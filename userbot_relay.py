@@ -241,14 +241,14 @@ Device Login:
     
     return final, reply_markup
 
-# ==================== FUNGSI KOMUNIKASI DENGAN BOT B (dengan logging) ====================
+# ==================== FUNGSI KOMUNIKASI DENGAN BOT B (dengan logging, tanpa parse_mode) ====================
 async def send_status_to_user(chat_id, text, reply_markup=None):
     """Kirim pesan status ke user melalui Bot B (pesan baru)"""
     url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
     data = {
         'chat_id': chat_id,
         'text': text,
-        'parse_mode': 'HTML'
+        # parse_mode dihapus (None) untuk menghindari error karakter khusus
     }
     if reply_markup:
         data['reply_markup'] = json.dumps(reply_markup)
@@ -272,7 +272,7 @@ async def edit_status_message(chat_id, message_id, text, reply_markup=None):
         'chat_id': chat_id,
         'message_id': message_id,
         'text': text,
-        'parse_mode': 'HTML'
+        # parse_mode dihapus (None)
     }
     if reply_markup:
         data['reply_markup'] = json.dumps(reply_markup)
