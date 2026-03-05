@@ -22,7 +22,7 @@ API_ID = int(os.environ.get('API_ID', 0))
 API_HASH = os.environ.get('API_HASH', '')
 SESSION_STRING = os.environ.get('SESSION_STRING', '')
 BOT_B_TOKEN = os.environ.get('BOT_B_TOKEN', '')
-BOT_A_USERNAME = 'bengkelmlbb_bot'  # ganti dengan username bot A yang sebenarnya
+BOT_A_USERNAME = 'bengkelmlbb_bot'
 REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
 OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', '')
 STOK_ADMIN_URL = os.environ.get('STOK_ADMIN_URL', 'https://whatsapp.com/channel/0029VbA4PrD5fM5TMgECoE1E')
@@ -278,8 +278,14 @@ async def edit_status_message(chat_id, message_id, text, reply_markup=None):
 
 # ==================== TIMEOUT CHECKER ====================
 async def timeout_checker():
-    """Loop untuk memonitor request yang melebihi batas waktu"""
+    """Loop untuk memonitor request yang melebihi batas waktu, 
+       namun ditangguhkan selama captcha berlangsung."""
     while True:
+        # Jika sedang dalam captcha, timeout ditangguhkan
+        if bot_status['in_captcha']:
+            await asyncio.sleep(1)
+            continue
+
         now = time.time()
         to_remove = []
         for req_id, req_data in list(active_requests.items()):
@@ -405,7 +411,7 @@ async def message_handler(event):
         logger.warning("🚫 CAPTCHA terdeteksi!")
         bot_status['in_captcha'] = True
 
-        # Reset timeout untuk request yang sedang aktif
+        # Reset timeout untuk request yang sedang aktif (beri waktu lebih)
         if active_requests:
             for req_id, req_info in active_requests.items():
                 req_info['start_time'] = time.time()
