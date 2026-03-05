@@ -459,8 +459,7 @@ Region: {region}
 BIND INFO:
 {chr(10).join(bind_info)}
 
-Device Login:
-• Android: {android}  iOS: {ios}"""
+Device Login: Android {android} | iOS {ios}"""
 
     reply_markup = {
         'inline_keyboard': [
