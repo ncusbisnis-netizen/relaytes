@@ -241,7 +241,7 @@ Device Login:
     
     return final, reply_markup
 
-# ==================== FUNGSI KOMUNIKASI DENGAN BOT B ====================
+# ==================== FUNGSI KOMUNIKASI DENGAN BOT B (dengan logging) ====================
 async def send_status_to_user(chat_id, text, reply_markup=None):
     """Kirim pesan status ke user melalui Bot B (pesan baru)"""
     url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
@@ -253,11 +253,16 @@ async def send_status_to_user(chat_id, text, reply_markup=None):
     if reply_markup:
         data['reply_markup'] = json.dumps(reply_markup)
     try:
+        logger.info(f"📤 Mengirim status ke user {chat_id}: {text[:50]}...")
         response = requests.post(url, json=data, timeout=10)
         if response.status_code == 200:
-            return response.json()['result']['message_id']
+            msg_id = response.json()['result']['message_id']
+            logger.info(f"✅ Status terkirim, message_id: {msg_id}")
+            return msg_id
+        else:
+            logger.error(f"❌ Gagal kirim status: {response.status_code} - {response.text}")
     except Exception as e:
-        logger.error(f"Gagal kirim status: {e}")
+        logger.error(f"❌ Exception kirim status: {e}")
     return None
 
 async def edit_status_message(chat_id, message_id, text, reply_markup=None):
@@ -272,9 +277,14 @@ async def edit_status_message(chat_id, message_id, text, reply_markup=None):
     if reply_markup:
         data['reply_markup'] = json.dumps(reply_markup)
     try:
-        requests.post(url, json=data, timeout=10)
+        logger.info(f"✏️ Mengedit pesan {message_id} untuk user {chat_id}")
+        response = requests.post(url, json=data, timeout=10)
+        if response.status_code == 200:
+            logger.info(f"✅ Pesan {message_id} berhasil diedit")
+        else:
+            logger.error(f"❌ Gagal edit pesan {message_id}: {response.status_code} - {response.text}")
     except Exception as e:
-        logger.error(f"Gagal edit pesan: {e}")
+        logger.error(f"❌ Exception saat edit pesan: {e}")
 
 # ==================== TIMEOUT CHECKER ====================
 async def timeout_checker():
@@ -302,13 +312,15 @@ async def timeout_checker():
                     if head and head.decode('utf-8') == req_id:
                         r.lpop('pending_requests')
                     r.delete(req_id)
-                except:
-                    pass
+                    logger.info(f"🗑️ Request {req_id} dihapus dari Redis karena timeout")
+                except Exception as e:
+                    logger.error(f"❌ Gagal hapus Redis saat timeout: {e}")
                 # Hapus dari waiting flag
                 waiting_for_result.pop(req_data['chat_id'], None)
                 to_remove.append(req_id)
         for req_id in to_remove:
             active_requests.pop(req_id, None)
+            logger.info(f"🗑️ Request {req_id} dihapus dari active_requests karena timeout")
         await asyncio.sleep(1)
 
 # ==================== HANDLER PESAN DARI BOT A ====================
@@ -330,14 +342,17 @@ async def message_handler(event):
     # ========== 1. HASIL INFO (format dengan garis) ==========
     if text.startswith('──────────────────────') and 'BIND ACCOUNT INFO' in text:
         logger.info("✅ Mendapatkan hasil info dari Bot A")
+        
+        # Cek apakah ada request aktif
         if not active_requests:
-            logger.warning("Tidak ada request aktif, hasil diabaikan")
+            logger.warning("❌ Tidak ada request aktif, hasil diabaikan")
             return
 
         # Ambil request yang sedang aktif (hanya satu)
         req_id, req_info = next(iter(active_requests.items()))
         user_id = req_info['chat_id']
         message_id = req_info['message_id']
+        logger.info(f"📋 Request aktif ditemukan: {req_id} untuk user {user_id} dengan message_id {message_id}")
 
         # Ekstrak data
         id_match = re.search(r'ID:?\s*(\d+)', text)
@@ -365,9 +380,13 @@ async def message_handler(event):
         # Edit pesan status dengan hasil
         await edit_status_message(user_id, message_id, output, markup)
 
-        # Bersihkan data
-        del active_requests[req_id]
-        waiting_for_result.pop(user_id, None)
+        # Bersihkan data dari memori
+        try:
+            del active_requests[req_id]
+            waiting_for_result.pop(user_id, None)
+            logger.info(f"✅ Request {req_id} dihapus dari active_requests")
+        except Exception as e:
+            logger.error(f"❌ Gagal hapus active_requests: {e}")
 
         # Hapus dari Redis
         try:
@@ -375,8 +394,9 @@ async def message_handler(event):
             if head and head.decode('utf-8') == req_id:
                 r.lpop('pending_requests')
             r.delete(req_id)
-        except:
-            pass
+            logger.info(f"✅ Request {req_id} dihapus dari Redis")
+        except Exception as e:
+            logger.error(f"❌ Gagal hapus Redis: {e}")
 
         cleanup_downloaded_photos()
         return
@@ -400,6 +420,8 @@ async def message_handler(event):
             logger.info(f"🔄 Auto-retry: {cmd}")
             # Update waktu mulai
             req_info['start_time'] = time.time()
+        else:
+            logger.warning("⚠️ Tidak ada request aktif untuk auto-retry")
         return
 
     # ========== 3. CAPTCHA ==========
@@ -416,6 +438,8 @@ async def message_handler(event):
             for req_id, req_info in active_requests.items():
                 req_info['start_time'] = time.time()
                 logger.info(f"⏱️ Reset timeout untuk request {req_id} karena captcha")
+        else:
+            logger.warning("⚠️ Captcha terdeteksi tapi tidak ada request aktif")
 
         # Batalkan timer sebelumnya jika ada
         if captcha_timer_task:
@@ -441,6 +465,7 @@ async def message_handler(event):
         if not captcha_code and message.photo:
             for attempt in range(2):  # Coba maksimal 2 kali
                 try:
+                    logger.info(f"📸 Percobaan OCR ke-{attempt+1}")
                     captcha_code = await read_number_from_photo_online(message)
                     if captcha_code:
                         logger.info(f"🔑 Kode captcha dari OCR (percobaan {attempt+1}): {captcha_code}")
@@ -474,11 +499,13 @@ async def message_handler(event):
                     if head and head.decode('utf-8') == req_id:
                         r.lpop('pending_requests')
                     r.delete(req_id)
-                except:
-                    pass
+                    logger.info(f"🗑️ Request {req_id} dihapus dari Redis karena gagal captcha")
+                except Exception as e:
+                    logger.error(f"❌ Gagal hapus Redis: {e}")
                 # Hapus dari waiting flag
                 waiting_for_result.pop(req_info['chat_id'], None)
                 del active_requests[req_id]
+                logger.info(f"🗑️ Request {req_id} dihapus dari active_requests karena gagal captcha")
 
             # Reset status captcha lebih cepat
             bot_status['in_captcha'] = False
@@ -504,11 +531,13 @@ async def process_queue():
 
                     req_json = r.get(req_id)
                     if not req_json:
+                        logger.warning(f"⚠️ Request {req_id} tidak ditemukan di Redis, dihapus dari antrian")
                         r.lpop('pending_requests')
                         continue
 
                     req_data = json.loads(req_json)
                     user_id = req_data['chat_id']
+                    logger.info(f"📋 Memproses request {req_id} dari user {user_id}")
 
                     # Jika user ini sedang menunggu hasil (misal dari request sebelumnya), tunda
                     if waiting_for_result.get(user_id, False):
@@ -535,6 +564,7 @@ async def process_queue():
                         'command': req_data['command'],
                         'args': req_data['args']
                     }
+                    logger.info(f"✅ Request {req_id} disimpan ke active_requests dengan message_id {msg_id}")
 
                     # Kirim perintah ke Bot A
                     cmd = f"{req_data['command']} {req_data['args'][0]} {req_data['args'][1]}"
@@ -564,6 +594,7 @@ async def main():
         if keys:
             for key in keys:
                 r.delete(key)
+                logger.info(f"🗑️ Menghapus key Redis: {key}")
     except Exception as e:
         logger.error(f"❌ Gagal membersihkan Redis: {e}")
 
