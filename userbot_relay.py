@@ -151,7 +151,7 @@ def validate_mlbb_gopay_sync(user_id, server_id):
         return {'status': False, 'message': str(e)}
 
 async def read_number_from_photo_online(message):
-    """OCR menggunakan ocr.space dengan timeout lebih panjang (60 detik)"""
+    """OCR menggunakan ocr.space dengan timeout 60 detik"""
     try:
         if not OCR_SPACE_API_KEY:
             return None
@@ -171,7 +171,7 @@ async def read_number_from_photo_online(message):
                 'language': 'eng',
                 'OCREngine': '2'
             },
-            timeout=60  # diperpanjang menjadi 60 detik
+            timeout=60
         )
         
         if response.status_code == 200:
@@ -405,6 +405,12 @@ async def message_handler(event):
         logger.warning("🚫 CAPTCHA terdeteksi!")
         bot_status['in_captcha'] = True
 
+        # Reset timeout untuk request yang sedang aktif
+        if active_requests:
+            for req_id, req_info in active_requests.items():
+                req_info['start_time'] = time.time()
+                logger.info(f"⏱️ Reset timeout untuk request {req_id} karena captcha")
+
         # Batalkan timer sebelumnya jika ada
         if captcha_timer_task:
             captcha_timer_task.cancel()
@@ -419,30 +425,36 @@ async def message_handler(event):
         # Ambil kode captcha
         captcha_code = None
 
-        # Cek di teks terlebih dahulu (misalnya jika ada angka 6 digit)
+        # Cek di teks terlebih dahulu
         digits = re.findall(r'\d', text)
         if len(digits) >= 6:
             captcha_code = ''.join(digits[:6])
             logger.info(f"🔑 Kode captcha dari teks: {captcha_code}")
 
-        # Jika tidak ada di teks dan ada foto, coba OCR
+        # Jika tidak ada di teks dan ada foto, coba OCR dengan retry
         if not captcha_code and message.photo:
-            try:
-                captcha_code = await read_number_from_photo_online(message)
-                if captcha_code:
-                    logger.info(f"🔑 Kode captcha dari OCR: {captcha_code}")
-            except Exception as e:
-                logger.error(f"❌ OCR gagal: {e}")
+            for attempt in range(2):  # Coba maksimal 2 kali
+                try:
+                    captcha_code = await read_number_from_photo_online(message)
+                    if captcha_code:
+                        logger.info(f"🔑 Kode captcha dari OCR (percobaan {attempt+1}): {captcha_code}")
+                        break
+                    else:
+                        logger.warning(f"OCR percobaan {attempt+1} gagal mendapatkan kode")
+                except Exception as e:
+                    logger.error(f"❌ OCR percobaan {attempt+1} error: {e}")
+                if attempt == 0:
+                    await asyncio.sleep(2)  # jeda sebelum retry
 
         if captcha_code and len(captcha_code) == 6:
             # Kirim verify ke Bot A
             await client.send_message(BOT_A_USERNAME, f"/verify {captcha_code}")
             logger.info("📤 Perintah verify dikirim")
         else:
-            logger.error("❌ Gagal mendapatkan kode captcha")
+            logger.error("❌ Gagal mendapatkan kode captcha setelah 2 percobaan")
             cleanup_downloaded_photos()
 
-            # Jika ada request aktif, batalkan sekarang juga (kirim pesan error)
+            # Jika ada request aktif, batalkan sekarang juga
             if active_requests:
                 req_id, req_info = next(iter(active_requests.items()))
                 await edit_status_message(
