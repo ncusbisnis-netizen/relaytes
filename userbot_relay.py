@@ -416,6 +416,10 @@ def clean_bind_text(text):
                 # Gunakan Moonton yang terakhir
                 text = f"Moonton: empty.{parts[1] if len(parts) > 1 else ''}"
     
+    # HAPUS TITIK GANDA - jika ada "empty.." ganti jadi "empty."
+    text = re.sub(r'empty\.\.', 'empty.', text)
+    text = re.sub(r'empty\.\.', 'empty.', text)  # lakukan dua kali untuk jaga-jaga
+    
     # Bersihkan spasi berlebih
     text = re.sub(r'\s+', ' ', text).strip()
     
@@ -537,13 +541,14 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios)
                     
                     # Cek apakah ini baris empty
                     if 'empty' in main_line.lower():
-                        # Langsung format dengan benar tanpa proses clean_bind_text dulu
+                        # Format dengan benar - pastikan tidak double dot
                         if ':' in main_line:
                             parts = main_line.split(':', 1)
                             label = parts[0].strip()
                             # Pastikan label hanya "Moonton" sekali
                             if label.count('Moonton') > 1:
                                 label = 'Moonton'
+                            # Gunakan "empty." tanpa tambahan titik
                             bind_info.append(f"• {label}: empty.")
                         else:
                             bind_info.append(f"• Moonton: empty.")
