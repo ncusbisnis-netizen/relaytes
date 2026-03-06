@@ -380,6 +380,37 @@ def validate_mlbb_gopay_sync(user_id, server_id):
     except Exception as e:
         logger.error(f"❌ Error: {e}")
         return {'status': False, 'message': str(e)}
+        
+        def clean_bind_text(text):
+    """Bersihkan text bind info sesuai permintaan"""
+    
+    # 1. Hapus (Unverified) - hapus saja tanpa mengganti
+    text = re.sub(r'\(Unverified\)', '', text)
+    text = re.sub(r'Unverified', '', text)
+    
+    # 2. Moonton Unverified = empty.
+    if 'Moonton Unverified' in text:
+        # Cek apakah ada format dengan titik dua
+        if 'Moonton :' in text:
+            parts = text.split('Moonton :', 1)
+            if len(parts) > 1:
+                text = f"{parts[0]}Moonton : empty."
+        else:
+            # Format tanpa titik dua
+            text = re.sub(r'Moonton\s*Unverified', 'Moonton : empty.', text)
+    
+    # 3. Bind (Private) = Hide information
+    if 'Bind (Private)' in text:
+        text = text.replace('Bind (Private)', 'Hide information')
+    elif '(Private)' in text:
+        text = text.replace('(Private)', 'Hide information')
+    elif 'Private' in text and ('Bind' in text or 'bind' in text):
+        text = text.replace('Private', 'Hide information')
+    
+    # Bersihkan spasi berlebih (karena penghapusan bisa menyebabkan spasi ganda)
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    return text
 
 async def read_number_from_photo_online(message):
     """OCR menggunakan ocr.space dengan timeout 60 detik"""
@@ -441,6 +472,10 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios)
             if kw in line:
                 clean_line = line.replace('✧', '•').strip()
                 clean_line = re.sub(r'\s+', ' ', clean_line)
+                
+                # Terapkan cleanup sesuai permintaan
+                clean_line = clean_bind_text(clean_line)
+                
                 if ':' in clean_line:
                     parts = clean_line.split(':', 1)
                     clean_line = f"{parts[0].strip()}: {parts[1].strip()}"
