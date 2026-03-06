@@ -383,33 +383,31 @@ def validate_mlbb_gopay_sync(user_id, server_id):
 
 # ============ TAMBAHKAN FUNGSI INI DI SINI ============
 def clean_bind_text(text):
-    """Bersihkan text bind info sesuai permintaan"""
+    """Bersihkan text bind info:
+       - Hapus (Unverified) dari mana pun
+       - Ubah 'Moonton Unverified' (tanpa kurung) jadi 'empty.'
+       - (Private) -> Hide information
+    """
     
-    # 1. Hapus (Unverified) - hapus saja tanpa mengganti
-    text = re.sub(r'\(Unverified\)', '', text)
-    text = re.sub(r'Unverified', '', text)
+    if 'Private' in text:
+        text = re.sub(r'Bind\s*\(Private\)', 'Hide information', text)
+        text = re.sub(r'\(Private\)', 'Hide information', text)
+        text = re.sub(r'\bPrivate\b', 'Hide information', text)
     
-    # 2. Moonton Unverified = empty.
+    text = re.sub(r'\s*\(Unverified\)', '', text)
+    
     if 'Moonton Unverified' in text:
-        # Cek apakah ada format dengan titik dua
         if 'Moonton :' in text:
-            parts = text.split('Moonton :', 1)
-            if len(parts) > 1:
-                text = f"{parts[0]}Moonton : empty."
+            text = re.sub(r'Moonton\s*:\s*Moonton\s+Unverified', 'Moonton : empty.', text)
+        elif 'Moonton:' in text:
+            text = re.sub(r'Moonton:\s*Moonton\s+Unverified', 'Moonton: empty.', text)
         else:
-            # Format tanpa titik dua
-            text = re.sub(r'Moonton\s*Unverified', 'Moonton : empty.', text)
+            text = re.sub(r'Moonton\s+Unverified', 'Moonton : empty.', text)
     
-    # 3. Bind (Private) = Hide information
-    if 'Bind (Private)' in text:
-        text = text.replace('Bind (Private)', 'Hide information')
-    elif '(Private)' in text:
-        text = text.replace('(Private)', 'Hide information')
-    elif 'Private' in text and ('Bind' in text or 'bind' in text):
-        text = text.replace('Private', 'Hide information')
-    
-    # Bersihkan spasi berlebih (karena penghapusan bisa menyebabkan spasi ganda)
     text = re.sub(r'\s+', ' ', text).strip()
+    
+    if 'Moonton' in text and 'empty' in text and ':' not in text:
+        text = text.replace('Moonton', 'Moonton:')
     
     return text
 # =======================================================
