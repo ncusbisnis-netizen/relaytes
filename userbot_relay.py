@@ -383,29 +383,32 @@ def validate_mlbb_gopay_sync(user_id, server_id):
 
 # ============ TAMBAHKAN FUNGSI INI DI SINI ============
 def clean_bind_text(text):
-    """Bersihkan text bind info sesuai aturan:
-    1. Hapus (Unverified) beserta kurungnya
-    2. Moonton : Moonton Unverified -> Moonton : empty.
-    3. Bind (Private) -> Hide information
-    """
+    """Bersihkan text bind info sesuai permintaan"""
     
-    # 1. HAPUS (Unverified) - beserta kurungnya
-    text = re.sub(r'\(\s*Unverified\s*\)', '', text)
+    # 1. Hapus (Unverified) - hapus saja tanpa mengganti
+    text = re.sub(r'\(Unverified\)', '', text)
+    text = re.sub(r'Unverified', '', text)
     
-    # 2. HANDLE MOONTON - Moonton : Moonton Unverified -> Moonton : empty.
-    if 'Moonton' in text:
-        # Cek format "Moonton : Moonton" atau "Moonton : Moonton Unverified"
-        moonton_pattern = r'Moonton\s*:\s*Moonton(?:\s+Unverified)?'
-        if re.search(moonton_pattern, text, re.IGNORECASE):
-            text = re.sub(moonton_pattern, 'Moonton : empty.', text, flags=re.IGNORECASE)
+    # 2. Moonton Unverified = empty.
+    if 'Moonton Unverified' in text:
+        # Cek apakah ada format dengan titik dua
+        if 'Moonton :' in text:
+            parts = text.split('Moonton :', 1)
+            if len(parts) > 1:
+                text = f"{parts[0]}Moonton : empty."
+        else:
+            # Format tanpa titik dua
+            text = re.sub(r'Moonton\s*Unverified', 'Moonton : empty.', text)
     
-    # 3. HANDLE PRIVATE - Bind (Private) -> Hide information
+    # 3. Bind (Private) = Hide information
     if 'Bind (Private)' in text:
         text = text.replace('Bind (Private)', 'Hide information')
     elif '(Private)' in text:
         text = text.replace('(Private)', 'Hide information')
+    elif 'Private' in text and ('Bind' in text or 'bind' in text):
+        text = text.replace('Private', 'Hide information')
     
-    # 4. CLEANUP - Hapus spasi berlebih
+    # Bersihkan spasi berlebih (karena penghapusan bisa menyebabkan spasi ganda)
     text = re.sub(r'\s+', ' ', text).strip()
     
     return text
