@@ -383,31 +383,41 @@ def validate_mlbb_gopay_sync(user_id, server_id):
 
 # ============ TAMBAHKAN FUNGSI INI DI SINI ============
 def clean_bind_text(text):
-    """Bersihkan text bind info:
-       - Hapus (Unverified) dari mana pun
-       - Ubah 'Moonton Unverified' (tanpa kurung) jadi 'empty.'
-       - (Private) -> Hide information
-    """
+    """Bersihkan text bind info"""
     
+    # Handle (Private) dan variasinya
     if 'Private' in text:
         text = re.sub(r'Bind\s*\(Private\)', 'Hide information', text)
         text = re.sub(r'\(Private\)', 'Hide information', text)
         text = re.sub(r'\bPrivate\b', 'Hide information', text)
     
+    # Handle (Unverified) - hapus saja
     text = re.sub(r'\s*\(Unverified\)', '', text)
     
+    # Handle kasus "Moonton Unverified" (tanpa kurung)
     if 'Moonton Unverified' in text:
-        if 'Moonton :' in text:
-            text = re.sub(r'Moonton\s*:\s*Moonton\s+Unverified', 'Moonton : empty.', text)
-        elif 'Moonton:' in text:
+        # Jika sudah ada format "Moonton : something"
+        if 'Moonton :' in text or 'Moonton:' in text:
+            text = re.sub(r'Moonton\s*:\s*Moonton\s+Unverified', 'Moonton: empty.', text)
             text = re.sub(r'Moonton:\s*Moonton\s+Unverified', 'Moonton: empty.', text)
         else:
-            text = re.sub(r'Moonton\s+Unverified', 'Moonton : empty.', text)
+            text = re.sub(r'Moonton\s+Unverified', 'Moonton: empty.', text)
     
+    # CEK KHUSUS: Jika teks mengandung "empty" dan "Moonton" dua kali
+    if 'empty' in text.lower() and text.count('Moonton') > 1:
+        # Ambil hanya satu "Moonton" sebelum "empty"
+        parts = text.split('empty', 1)
+        # Cari bagian sebelum empty yang mengandung Moonton
+        before_empty = parts[0]
+        if 'Moonton' in before_empty:
+            # Ambil Moonton terakhir sebelum empty
+            moonton_parts = before_empty.split('Moonton')
+            if len(moonton_parts) > 1:
+                # Gunakan Moonton yang terakhir
+                text = f"Moonton: empty.{parts[1] if len(parts) > 1 else ''}"
+    
+    # Bersihkan spasi berlebih
     text = re.sub(r'\s+', ' ', text).strip()
-    
-    if 'Moonton' in text and 'empty' in text and ':' not in text:
-        text = text.replace('Moonton', 'Moonton:')
     
     return text
 # =======================================================
