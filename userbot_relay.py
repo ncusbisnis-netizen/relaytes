@@ -461,6 +461,8 @@ def cleanup_downloaded_photos():
             pass
 
 def format_final_output(original_text, nickname, region, uid, sid, android, ios):
+    """Format output final dengan penanganan Moonton empty yang benar"""
+    
     keywords = ['Moonton', 'VK', 'Google Play', 'Tiktok', 'Facebook', 'Apple', 'GCID', 'Telegram', 'WhatsApp']
     
     # Kelompokkan baris berdasarkan keyword utama (diawali ✧)
@@ -468,52 +470,105 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios)
     groups = {}
     current_keyword = None
     current_lines = []
+    
     for line in lines:
         stripped = line.strip()
         if not stripped:
             continue
+        
         if stripped.startswith('✧'):
             if current_keyword:
                 groups[current_keyword] = current_lines
-            parts = stripped[1:].strip().split(':', 1)
-            keyword_raw = parts[0].strip()
+            
+            # Ambil nama keyword (sebelum ':')
+            if ':' in stripped:
+                parts = stripped[1:].strip().split(':', 1)
+                keyword_raw = parts[0].strip()
+            else:
+                keyword_raw = stripped[1:].strip()
+            
             current_keyword = keyword_raw
             current_lines = [stripped]
         else:
             if current_keyword:
                 current_lines.append(stripped)
+    
     if current_keyword:
         groups[current_keyword] = current_lines
-
+    
     bind_info = []
     for kw in keywords:
         if kw in groups:
             lines_group = groups[kw]
+            
             if kw == "Moonton":
-                # Cari sub‑baris yang diawali '-' (misal - Moonton 1 : ...)
-                sub_lines = [l for l in lines_group if l.startswith('-') and 'Moonton' in l]
+                # Cari sub-baris yang diawali '-'
+                sub_lines = [l for l in lines_group if l.startswith('-')]
+                
                 if sub_lines:
+                    # Ada beberapa akun Moonton, tampilkan masing-masing
                     for sub in sub_lines:
                         sub_clean = sub.lstrip('-').strip()
                         if ':' in sub_clean:
                             label, value = sub_clean.split(':', 1)
                             label = label.strip()
                             value = value.strip()
+                            # Bersihkan value
                             value = clean_bind_text(value)
                             bind_info.append(f"• {label}: {value}")
                         else:
                             bind_info.append(f"• {sub_clean}")
                 else:
-                    main_line = lines_group[0].replace('✧', '•').strip()
-                    main_line = clean_bind_text(main_line)
-                    bind_info.append(main_line)
+                    # Hanya satu baris Moonton
+                    main_line = lines_group[0]
+                    # Hapus '✧' dan bersihkan
+                    if main_line.startswith('✧'):
+                        main_line = main_line[1:].strip()
+                    
+                    # Cek apakah ini baris empty
+                    if 'empty' in main_line.lower():
+                        # Langsung format dengan benar tanpa proses clean_bind_text dulu
+                        if ':' in main_line:
+                            parts = main_line.split(':', 1)
+                            label = parts[0].strip()
+                            # Pastikan label hanya "Moonton" sekali
+                            if label.count('Moonton') > 1:
+                                label = 'Moonton'
+                            bind_info.append(f"• {label}: empty.")
+                        else:
+                            bind_info.append(f"• Moonton: empty.")
+                    else:
+                        # Tidak empty, proses normal
+                        main_line = clean_bind_text(main_line)
+                        
+                        # Pastikan formatnya "Moonton: value"
+                        if ':' in main_line:
+                            label, value = main_line.split(':', 1)
+                            label = label.strip()
+                            value = value.strip()
+                            bind_info.append(f"• {label}: {value}")
+                        else:
+                            bind_info.append(f"• Moonton: {main_line}")
             else:
-                main_line = lines_group[0].replace('✧', '•').strip()
+                # Keyword lain: ambil baris utama saja
+                main_line = lines_group[0]
+                if main_line.startswith('✧'):
+                    main_line = main_line[1:].strip()
+                
                 main_line = clean_bind_text(main_line)
-                bind_info.append(main_line)
+                
+                # Pastikan formatnya "Keyword: value"
+                if ':' in main_line:
+                    label, value = main_line.split(':', 1)
+                    label = label.strip()
+                    value = value.strip()
+                    bind_info.append(f"• {label}: {value}")
+                else:
+                    bind_info.append(f"• {kw}: {main_line}")
         else:
-            bind_info.append(f"• {kw} : empty.")
-
+            # Keyword tidak ditemukan
+            bind_info.append(f"• {kw}: empty.")
+    
     final = f"""INFORMATION ACCOUNT:
 ID: {uid}
 Server: {sid}
@@ -524,7 +579,7 @@ BIND INFO:
 {chr(10).join(bind_info)}
 
 Device Login: Android {android} | iOS {ios}"""
-
+    
     reply_markup = {
         'inline_keyboard': [
             [{'text': 'STOK ADMIN', 'url': STOK_ADMIN_URL}]
