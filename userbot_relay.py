@@ -380,8 +380,9 @@ def validate_mlbb_gopay_sync(user_id, server_id):
     except Exception as e:
         logger.error(f"❌ Error: {e}")
         return {'status': False, 'message': str(e)}
-        
-        def clean_bind_text(text):
+
+# ============ TAMBAHKAN FUNGSI INI DI SINI ============
+def clean_bind_text(text):
     """Bersihkan text bind info sesuai permintaan"""
     
     # 1. Hapus (Unverified) - hapus saja tanpa mengganti
@@ -411,6 +412,7 @@ def validate_mlbb_gopay_sync(user_id, server_id):
     text = re.sub(r'\s+', ' ', text).strip()
     
     return text
+# =======================================================
 
 async def read_number_from_photo_online(message):
     """OCR menggunakan ocr.space dengan timeout 60 detik"""
