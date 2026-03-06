@@ -461,30 +461,59 @@ def cleanup_downloaded_photos():
             pass
 
 def format_final_output(original_text, nickname, region, uid, sid, android, ios):
-    """Format output final"""
-    
     keywords = ['Moonton', 'VK', 'Google Play', 'Tiktok', 'Facebook', 'Apple', 'GCID', 'Telegram', 'WhatsApp']
+    
+    # Kelompokkan baris berdasarkan keyword utama (diawali ✧)
+    lines = original_text.split('\n')
+    groups = {}
+    current_keyword = None
+    current_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith('✧'):
+            if current_keyword:
+                groups[current_keyword] = current_lines
+            parts = stripped[1:].strip().split(':', 1)
+            keyword_raw = parts[0].strip()
+            current_keyword = keyword_raw
+            current_lines = [stripped]
+        else:
+            if current_keyword:
+                current_lines.append(stripped)
+    if current_keyword:
+        groups[current_keyword] = current_lines
+
     bind_info = []
-    
     for kw in keywords:
-        found = False
-        for line in original_text.split('\n'):
-            if kw in line:
-                clean_line = line.replace('✧', '•').strip()
-                clean_line = re.sub(r'\s+', ' ', clean_line)
-                
-                # Terapkan cleanup sesuai permintaan
-                clean_line = clean_bind_text(clean_line)
-                
-                if ':' in clean_line:
-                    parts = clean_line.split(':', 1)
-                    clean_line = f"{parts[0].strip()}: {parts[1].strip()}"
-                bind_info.append(clean_line)
-                found = True
-                break
-        if not found:
+        if kw in groups:
+            lines_group = groups[kw]
+            if kw == "Moonton":
+                # Cari sub‑baris yang diawali '-' (misal - Moonton 1 : ...)
+                sub_lines = [l for l in lines_group if l.startswith('-') and 'Moonton' in l]
+                if sub_lines:
+                    for sub in sub_lines:
+                        sub_clean = sub.lstrip('-').strip()
+                        if ':' in sub_clean:
+                            label, value = sub_clean.split(':', 1)
+                            label = label.strip()
+                            value = value.strip()
+                            value = clean_bind_text(value)
+                            bind_info.append(f"• {label}: {value}")
+                        else:
+                            bind_info.append(f"• {sub_clean}")
+                else:
+                    main_line = lines_group[0].replace('✧', '•').strip()
+                    main_line = clean_bind_text(main_line)
+                    bind_info.append(main_line)
+            else:
+                main_line = lines_group[0].replace('✧', '•').strip()
+                main_line = clean_bind_text(main_line)
+                bind_info.append(main_line)
+        else:
             bind_info.append(f"• {kw} : empty.")
-    
+
     final = f"""INFORMATION ACCOUNT:
 ID: {uid}
 Server: {sid}
@@ -501,7 +530,6 @@ Device Login: Android {android} | iOS {ios}"""
             [{'text': 'STOK ADMIN', 'url': STOK_ADMIN_URL}]
         ]
     }
-    
     return final, reply_markup
 
 # ==================== FUNGSI KOMUNIKASI DENGAN BOT B (dengan logging, tanpa parse_mode) ====================
