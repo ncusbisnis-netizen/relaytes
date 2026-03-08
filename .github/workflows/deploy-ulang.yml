@@ -12,5 +12,5 @@ jobs:
         uses: akhileshns/heroku-deploy@v3.12.12
         with:
           heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
-          heroku_app_name: "NAMA_APP_KAMU"
-          heroku_email: "EMAIL_HEROKU_KAMU"
+          heroku_app_name: "relaybot"
+          heroku_email: "cepetinkredit@outlook.com"
