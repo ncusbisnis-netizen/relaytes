@@ -847,7 +847,7 @@ async def message_handler(event):
             logger.warning("⚠️ Tidak ada request aktif untuk auto-retry")
         return
 
-    # ========== 3. CAPTCHA DENGAN FORCE VERIFY ==========
+   # ========== 3. CAPTCHA DENGAN FORCE VERIFY ==========
 # Deteksi captcha yang lebih agresif
 is_captcha = (
     message.photo or 
@@ -894,27 +894,33 @@ if is_captcha:
 
     # Jika tidak ada di teks dan ada foto, coba OCR dengan multiple attempts
     if not captcha_code and message.photo:
-        for attempt in range(max_ocr_attempts):
-            try:
-                logger.info(f"📸 Percobaan OCR ke-{attempt+1} dari {max_ocr_attempts}")
-                # PASTIKAN PANGGIL FUNGSI YANG BARU!
-                captcha_code = await read_number_from_photo_online_force(message)
-                
-                if captcha_code and len(captcha_code) == 6:
-                    logger.info(f"🔑 Kode captcha dari OCR (percobaan {attempt+1}): {captcha_code}")
-                    break
-                elif captcha_code:
-                    logger.warning(f"OCR percobaan {attempt+1} menghasilkan kode tidak valid: {captcha_code}")
-                    captcha_code = None
-                else:
-                    logger.warning(f"OCR percobaan {attempt+1} gagal mendapatkan kode")
+        # Buat fungsi async di dalam handler
+        async def process_ocr():
+            for attempt in range(max_ocr_attempts):
+                try:
+                    logger.info(f"📸 Percobaan OCR ke-{attempt+1} dari {max_ocr_attempts}")
+                    # PASTIKAN PANGGIL FUNGSI YANG BARU!
+                    code = await read_number_from_photo_online_force(message)
                     
-            except Exception as e:
-                logger.error(f"❌ OCR percobaan {attempt+1} error: {e}")
+                    if code and len(code) == 6:
+                        logger.info(f"🔑 Kode captcha dari OCR (percobaan {attempt+1}): {code}")
+                        return code
+                    elif code:
+                        logger.warning(f"OCR percobaan {attempt+1} menghasilkan kode tidak valid: {code}")
+                    else:
+                        logger.warning(f"OCR percobaan {attempt+1} gagal mendapatkan kode")
+                        
+                except Exception as e:
+                    logger.error(f"❌ OCR percobaan {attempt+1} error: {e}")
+                
+                # Jeda antar percobaan
+                if attempt < max_ocr_attempts - 1:
+                    await asyncio.sleep(3)  # Jeda 3 detik antar percobaan
             
-            # Jeda antar percobaan
-            if attempt < max_ocr_attempts - 1 and not captcha_code:
-                await asyncio.sleep(3)  # Jeda 3 detik antar percobaan
+            return None
+        
+        # Jalankan proses OCR
+        captcha_code = await process_ocr()
 
     # FORCE VERIFY - Kirim verify meskipun ragu-ragu
     if captcha_code:
