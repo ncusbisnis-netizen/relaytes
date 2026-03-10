@@ -29,214 +29,6 @@ STOK_ADMIN_URL = os.environ.get('STOK_ADMIN_URL', 'https://whatsapp.com/channel/
 
 # ==================== COUNTRY MAPPING SEDERHANA ====================
 country_mapping = {
-    'AF': '🇦🇫 Afghanistan',
-  'AX': '🇦🇽 Åland Islands',
-  'AL': '🇦🇱 Albania',
-  'DZ': '🇩🇿 Algeria',
-  'AS': '🇦🇸 American Samoa',
-  'AD': '🇦🇩 Andorra',
-  'AO': '🇦🇴 Angola',
-  'AI': '🇦🇮 Anguilla',
-  'AQ': '🇦🇶 Antarctica',
-  'AG': '🇦🇬 Antigua and Barbuda',
-  'AR': '🇦🇷 Argentina',
-  'AM': '🇦🇲 Armenia',
-  'AW': '🇦🇼 Aruba',
-  'AU': '🇦🇺 Australia',
-  'AT': '🇦🇹 Austria',
-  'AZ': '🇦🇿 Azerbaijan',
-  'BS': '🇧🇸 Bahamas',
-  'BH': '🇧🇭 Bahrain',
-  'BD': '🇧🇩 Bangladesh',
-  'BB': '🇧🇧 Barbados',
-  'BY': '🇧🇾 Belarus',
-  'BE': '🇧🇪 Belgium',
-  'BZ': '🇧🇿 Belize',
-  'BJ': '🇧🇯 Benin',
-  'BM': '🇧🇲 Bermuda',
-  'BT': '🇧🇹 Bhutan',
-  'BO': '🇧🇴 Bolivia, Plurinational State of bolivia',
-  'BA': '🇧🇦 Bosnia and Herzegovina',
-  'BW': '🇧🇼 Botswana',
-  'BV': '🇧🇻 Bouvet Island',
-  'BR': '🇧🇷 Brazil',
-  'IO': '🇮🇴 British Indian Ocean Territory',
-  'BN': '🇧🇳 Brunei Darussalam',
-  'BG': '🇧🇬 Bulgaria',
-  'BF': '🇧🇫 Burkina Faso',
-  'BI': '🇧🇮 Burundi',
-  'KH': '🇰🇭 Cambodia',
-  'CM': '🇨🇲 Cameroon',
-  'CA': '🇨🇦 Canada',
-  'CV': '🇨🇻 Cape Verde',
-  'KY': '🇰🇾 Cayman Islands',
-  'CF': '🇨🇫 Central African Republic',
-  'TD': '🇹🇩 Chad',
-  'CL': '🇨🇱 Chile',
-  'CN': '🇨🇳 China',
-  'CX': '🇨🇽 Christmas Island',
-  'CC': '🇨🇨 Cocos (Keeling) Islands',
-  'CO': '🇨🇴 Colombia',
-  'KM': '🇰🇲 Comoros',
-  'CG': '🇨🇬 Congo',
-  'CD': '🇨🇩 Congo, The Democratic Republic of the Congo',
-  'CK': '🇨🇰 Cook Islands',
-  'CR': '🇨🇷 Costa Rica',
-  'CI': "🇨🇮 Cote d'Ivoire",
-  'HR': '🇭🇷 Croatia',
-  'CU': '🇨🇺 Cuba',
-  'CY': '🇨🇾 Cyprus',
-  'CZ': '🇨🇿 Czech Republic',
-  'DK': '🇩🇰 Denmark',
-  'DJ': '🇩🇯 Djibouti',
-  'DM': '🇩🇲 Dominica',
-  'DO': '🇩🇴 Dominican Republic',
-  'EC': '🇪🇨 Ecuador',
-  'EG': '🇪🇬 Egypt',
-  'SV': '🇸🇻 El Salvador',
-  'GQ': '🇬🇶 Equatorial Guinea',
-  'ER': '🇪🇷 Eritrea',
-  'EE': '🇪🇪 Estonia',
-  'ET': '🇪🇹 Ethiopia',
-  'FK': '🇫🇰 Falkland Islands (Malvinas)',
-  'FO': '🇫🇴 Faroe Islands',
-  'FJ': '🇫🇯 Fiji',
-  'FI': '🇫🇮 Finland',
-  'FR': '🇫🇷 France',
-  'GF': '🇬🇫 French Guiana',
-  'PF': '🇵🇫 French Polynesia',
-  'TF': '🇹🇫 French Southern Territories',
-  'GA': '🇬🇦 Gabon',
-  'GM': '🇬🇲 Gambia',
-  'GE': '🇬🇪 Georgia',
-  'DE': '🇩🇪 Germany',
-  'GH': '🇬🇭 Ghana',
-  'GI': '🇬🇮 Gibraltar',
-  'GR': '🇬🇷 Greece',
-  'GL': '🇬🇱 Greenland',
-  'GD': '🇬🇩 Grenada',
-  'GP': '🇬🇵 Guadeloupe',
-  'GU': '🇬🇺 Guam',
-  'GT': '🇬🇹 Guatemala',
-  'GG': '🇬🇬 Guernsey',
-  'GN': '🇬🇳 Guinea',
-  'GW': '🇬🇼 Guinea-Bissau',
-  'GY': '🇬🇾 Guyana',
-  'HT': '🇭🇹 Haiti',
-  'HM': '🇭🇲 Heard Island and Mcdonald Islands',
-  'VA': '🇻🇦 Holy See (Vatican City State)',
-  'HN': '🇭🇳 Honduras',
-  'HK': '🇭🇰 Hong Kong',
-  'HU': '🇭🇺 Hungary',
-  'IS': '🇮🇸 Iceland',
-  'IN': '🇮🇳 India',
-  'ID': '🇮🇩 Indonesia',
-  'IR': '🇮🇷 Iran, Islamic Republic of Persian Gulf',
-  'IQ': '🇮🇶 Iraq',
-  'IE': '🇮🇪 Ireland',
-  'IM': '🇮🇲 Isle of Man',
-  'IL': '🇮🇱 Israel',
-  'IT': '🇮🇹 Italy',
-  'JM': '🇯🇲 Jamaica',
-  'JP': '🇯🇵 Japan',
-  'JE': '🇯🇪 Jersey',
-  'JO': '🇯🇴 Jordan',
-  'KZ': '🇰🇿 Kazakhstan',
-  'KE': '🇰🇪 Kenya',
-  'KI': '🇰🇮 Kiribati',
-  'KP': "🇰🇵 Korea, Democratic People's Republic of Korea",
-  'KR': '🇰🇷 Korea, Republic of South Korea',
-  'XK': '🇽🇰 Kosovo',
-  'KW': '🇰🇼 Kuwait',
-  'KG': '🇰🇬 Kyrgyzstan',
-  'LA': '🇱🇦 Laos',
-  'LV': '🇱🇻 Latvia',
-  'LB': '🇱🇧 Lebanon',
-  'LS': '🇱🇸 Lesotho',
-  'LR': '🇱🇷 Liberia',
-  'LY': '🇱🇾 Libyan Arab Jamahiriya',
-  'LI': '🇱🇮 Liechtenstein',
-  'LT': '🇱🇹 Lithuania',
-  'LU': '🇱🇺 Luxembourg',
-  'MO': '🇲🇴 Macao',
-  'MK': '🇲🇰 Macedonia',
-  'MG': '🇲🇬 Madagascar',
-  'MW': '🇲🇼 Malawi',
-  'MY': '🇲🇾 Malaysia',
-  'MV': '🇲🇻 Maldives',
-  'ML': '🇲🇱 Mali',
-  'MT': '🇲🇹 Malta',
-  'MH': '🇲🇭 Marshall Islands',
-  'MQ': '🇲🇶 Martinique',
-  'MR': '🇲🇷 Mauritania',
-  'MU': '🇲🇺 Mauritius',
-  'YT': '🇾🇹 Mayotte',
-  'MX': '🇲🇽 Mexico',
-  'FM': '🇫🇲 Micronesia, Federated States of Micronesia',
-  'MD': '🇲🇩 Moldova',
-  'MC': '🇲🇨 Monaco',
-  'MN': '🇲🇳 Mongolia',
-  'ME': '🇲🇪 Montenegro',
-  'MS': '🇲🇸 Montserrat',
-  'MA': '🇲🇦 Morocco',
-  'MZ': '🇲🇿 Mozambique',
-  'MM': '🇲🇲 Myanmar',
-  'NA': '🇳🇦 Namibia',
-  'NR': '🇳🇷 Nauru',
-  'NP': '🇳🇵 Nepal',
-  'NL': '🇳🇱 Netherlands',
-  'AN': 'Netherlands Antilles',
-  'NC': '🇳🇨 New Caledonia',
-  'NZ': '🇳🇿 New Zealand',
-  'NI': '🇳🇮 Nicaragua',
-  'NE': '🇳🇪 Niger',
-  'NG': '🇳🇬 Nigeria',
-  'NU': '🇳🇺 Niue',
-  'NF': '🇳🇫 Norfolk Island',
-  'MP': '🇲🇵 Northern Mariana Islands',
-  'NO': '🇳🇴 Norway',
-  'OM': '🇴🇲 Oman',
-  'PK': '🇵🇰 Pakistan',
-  'PW': '🇵🇼 Palau',
-  'PS': '🇵🇸 Palestinian Territory, Occupied',
-  'PA': '🇵🇦 Panama',
-  'PG': '🇵🇬 Papua New Guinea',
-  'PY': '🇵🇾 Paraguay',
-  'PE': '🇵🇪 Peru',
-  'PH': '🇵🇭 Philippines',
-  'PN': '🇵🇳 Pitcairn',
-  'PL': '🇵🇱 Poland',
-  'PT': '🇵🇹 Portugal',
-  'PR': '🇵🇷 Puerto Rico',
-  'QA': '🇶🇦 Qatar',
-  'RO': '🇷🇴 Romania',
-  'RU': '🇷🇺 Russia',
-  'RW': '🇷🇼 Rwanda',
-  'RE': '🇷🇪 Reunion',
-  'BL': '🇧🇱 Saint Barthelemy',
-  'SH': '🇸🇭 Saint Helena, Ascension and Tristan Da Cunha',
-  'KN': '🇰🇳 Saint Kitts and Nevis',
-  'LC': '🇱🇨 Saint Lucia',
-  'MF': '🇲🇫 Saint Martin',
-  'PM': '🇵🇲 Saint Pierre and Miquelon',
-  'VC': '🇻🇨 Saint Vincent and the Grenadines',
-  'WS': '🇼🇸 Samoa',
-  'SM': '🇸🇲 San Marino',
-  'ST': '🇸🇹 Sao Tome and Principe',
-  'SA': '🇸🇦 Saudi Arabia',
-  'SN': '🇸🇳 Senegal',
-  'RS': '🇷🇸 Serbia',
-  'SC': '🇸🇨 Seychelles',
-  'SL': '🇸🇱 Sierra Leone',
-  'SG': '🇸🇬 Singapore',
-  'SK': '🇸🇰 Slovakia',
-  'SI': '🇸🇮 Slovenia',
-  'SB': '🇸🇧 Solomon Islands',
-  'SO': '🇸🇴 Somalia',
-  'ZA': '🇿🇦 South Africa',
-  'SS': '🇸🇸 South Sudan',
-  'GS': '🇬🇸 South Georgia and the South Sandwich Islands',
-  'ES': '🇪🇸 Spain',
   'LK': '🇱🇰 Sri Lanka',
   'SD': '🇸🇩 Sudan',
   'SR': '🇸🇷 Suriname',
@@ -427,82 +219,41 @@ def clean_bind_text(text):
 # =======================================================
 
 async def read_number_from_photo_online(message):
-    """OCR menggunakan ocr.space dengan multiple engine dan retry"""
+    """OCR menggunakan ocr.space dengan timeout 60 detik"""
     try:
         if not OCR_SPACE_API_KEY:
-            logger.error("❌ OCR API Key tidak ditemukan")
             return None
         
         logger.info("📸 Downloading captcha photo...")
         photo_path = await message.download_media()
         downloaded_photos.append(photo_path)
         
-        # Coba dengan multiple OCR engines
-        ocr_engines = ['2', '1', '3']  # Coba engine 2, 1, dan 3
+        with open(photo_path, 'rb') as f:
+            image_data = base64.b64encode(f.read()).decode('utf-8')
         
-        for engine in ocr_engines:
-            try:
-                logger.info(f"🔍 Mencoba OCR dengan engine {engine}...")
-                
-                with open(photo_path, 'rb') as f:
-                    image_data = base64.b64encode(f.read()).decode('utf-8')
-                
-                response = requests.post(
-                    'https://api.ocr.space/parse/image',
-                    data={
-                        'base64Image': f'data:image/jpeg;base64,{image_data}',
-                        'apikey': OCR_SPACE_API_KEY,
-                        'language': 'eng',
-                        'OCREngine': engine,
-                        'scale': 'true',
-                        'detectOrientation': 'true',
-                        'filetype': 'JPG'
-                    },
-                    timeout=30
-                )
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    if not result.get('IsErroredOnProcessing'):
-                        text = result.get('ParsedResults', [{}])[0].get('ParsedText', '')
-                        logger.info(f"📝 OCR Result (engine {engine}): {text}")
-                        
-                        # Bersihkan text - hanya ambil angka
-                        text = re.sub(r'[^0-9]', '', text)
-                        
-                        # Cari 6 digit angka berturut-turut
-                        match = re.search(r'(\d{6})', text)
-                        if match:
-                            code = match.group(1)
-                            logger.info(f"✅ Kode ditemukan dengan engine {engine}: {code}")
-                            return code
-                        
-                        # Coba juga cari angka yang mungkin terpisah tapi total 6 digit
-                        if len(text) >= 6:
-                            code = text[:6]
-                            logger.info(f"✅ Mengambil 6 digit pertama: {code}")
-                            return code
-                            
-            except Exception as e:
-                logger.error(f"❌ OCR engine {engine} error: {e}")
-                continue
-            
-            await asyncio.sleep(1)
+        response = requests.post(
+            'https://api.ocr.space/parse/image',
+            data={
+                'base64Image': f'data:image/jpeg;base64,{image_data}',
+                'apikey': OCR_SPACE_API_KEY,
+                'language': 'eng',
+                'OCREngine': '2'
+            },
+            timeout=60
+        )
         
+        if response.status_code == 200:
+            result = response.json()
+            if not result.get('IsErroredOnProcessing'):
+                text = result.get('ParsedResults', [{}])[0].get('ParsedText', '')
+                text = re.sub(r'[^0-9]', '', text)
+                match = re.search(r'(\d{6})', text)
+                if match:
+                    return match.group(1)
         return None
-        
     except Exception as e:
         logger.error(f"❌ OCR error: {e}")
         return None
-    finally:
-        # Cleanup
-        try:
-            if os.path.exists(photo_path):
-                os.remove(photo_path)
-                if photo_path in downloaded_photos:
-                    downloaded_photos.remove(photo_path)
-        except:
-            pass
 
 def cleanup_downloaded_photos():
     """Hapus file foto sementara"""
@@ -826,17 +577,16 @@ async def message_handler(event):
             logger.warning("⚠️ Tidak ada request aktif untuk auto-retry")
         return
 
-    # ========== 3. CAPTCHA - VERSI AGGRESIF ==========
+    # ========== 3. CAPTCHA ==========
     if (message.photo or 
         'captcha' in text.lower() or 
-        'kode' in text.lower() or
         re.search(r'\d{6}', text) or 
         '🔒 Masukkan kode captcha' in text):
         
         logger.warning("🚫 CAPTCHA terdeteksi!")
         bot_status['in_captcha'] = True
 
-        # Reset timeout untuk request yang sedang aktif
+        # Reset timeout untuk request yang sedang aktif (beri waktu lebih)
         if active_requests:
             for req_id, req_info in active_requests.items():
                 req_info['start_time'] = time.time()
@@ -848,75 +598,73 @@ async def message_handler(event):
         if captcha_timer_task:
             captcha_timer_task.cancel()
 
-        # Set timer untuk captcha
+        # Set timer untuk mematikan status captcha jika terlalu lama
         async def reset_captcha():
             await asyncio.sleep(CAPTCHA_TIMEOUT)
             bot_status['in_captcha'] = False
             logger.info("Captcha timeout, status direset")
         captcha_timer_task = asyncio.create_task(reset_captcha())
 
-        # AGGRESSIVE CAPTCHA HANDLING
+        # Ambil kode captcha
         captcha_code = None
-        
-        # Method 1: Cek di teks
+
+        # Cek di teks terlebih dahulu
         digits = re.findall(r'\d', text)
         if len(digits) >= 6:
             captcha_code = ''.join(digits[:6])
-            logger.info(f"🔑 [Method 1] Kode dari teks: {captcha_code}")
-        
-        # Method 2: OCR dengan multiple attempts
-        if not captcha_code and message.photo:
-            for attempt in range(3):  # Coba 3 kali
-                logger.info(f"📸 [Method 2] Percobaan OCR ke-{attempt+1}/3")
-                captcha_code = await read_number_from_photo_online(message)
-                
-                if captcha_code:
-                    logger.info(f"🔑 [Method 2] Kode dari OCR (percobaan {attempt+1}): {captcha_code}")
-                    break
-                else:
-                    logger.warning(f"⚠️ OCR percobaan {attempt+1} gagal")
-                    
-                if attempt < 2:
-                    await asyncio.sleep(3)
-        
-        # Method 3: Cari pola di teks
-        if not captcha_code:
-            pattern = r'kode[:\s]*(\d{6})'
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                captcha_code = match.group(1)
-                logger.info(f"🔑 [Method 3] Kode dari pola teks: {captcha_code}")
-        
-        # Method 4: Coba dari caption foto
-        if not captcha_code and message.photo and message.message:
-            digits_in_caption = re.findall(r'\d', message.message)
-            if len(digits_in_caption) >= 6:
-                captcha_code = ''.join(digits_in_caption[:6])
-                logger.info(f"🔑 [Method 4] Kode dari caption: {captcha_code}")
-        
-        # Method 5: Fallback - coba /verify tanpa kode
-        if not captcha_code:
-            logger.error("❌ SEMUA METODE GAGAL MENDAPATKAN KODE CAPTCHA")
-            
-            await client.send_message(BOT_A_USERNAME, "/verify")
-            logger.info("📤 Mengirim /verify tanpa kode sebagai percobaan")
-            return
+            logger.info(f"🔑 Kode captcha dari teks: {captcha_code}")
 
-        # Jika berhasil mendapatkan kode
+        # Jika tidak ada di teks dan ada foto, coba OCR dengan retry
+        if not captcha_code and message.photo:
+            for attempt in range(2):  # Coba maksimal 2 kali
+                try:
+                    logger.info(f"📸 Percobaan OCR ke-{attempt+1}")
+                    captcha_code = await read_number_from_photo_online(message)
+                    if captcha_code:
+                        logger.info(f"🔑 Kode captcha dari OCR (percobaan {attempt+1}): {captcha_code}")
+                        break
+                    else:
+                        logger.warning(f"OCR percobaan {attempt+1} gagal mendapatkan kode")
+                except Exception as e:
+                    logger.error(f"❌ OCR percobaan {attempt+1} error: {e}")
+                if attempt == 0:
+                    await asyncio.sleep(2)  # jeda sebelum retry
+
         if captcha_code and len(captcha_code) == 6:
+            # Kirim verify ke Bot A
             await client.send_message(BOT_A_USERNAME, f"/verify {captcha_code}")
-            logger.info(f"📤 Perintah verify {captcha_code} dikirim")
-            
-            # Tunggu respon verifikasi
-            await asyncio.sleep(5)
-            
-            # Cek apakah masih dalam captcha
-            if bot_status['in_captcha']:
-                logger.warning("⚠️ Verifikasi mungkin gagal, mencoba lagi...")
-                await asyncio.sleep(3)
+            logger.info("📤 Perintah verify dikirim")
         else:
-            logger.error(f"❌ Kode captcha tidak valid: {captcha_code}")
+            logger.error("❌ Gagal mendapatkan kode captcha setelah 2 percobaan")
             cleanup_downloaded_photos()
+
+            # Jika ada request aktif, batalkan sekarang juga
+            if active_requests:
+                req_id, req_info = next(iter(active_requests.items()))
+                await edit_status_message(
+                    req_info['chat_id'],
+                    req_info['message_id'],
+                    "Gagal memproses request. Coba lagi."
+                )
+                # Hapus dari Redis
+                try:
+                    head = r.lindex('pending_requests', 0)
+                    if head and head.decode('utf-8') == req_id:
+                        r.lpop('pending_requests')
+                    r.delete(req_id)
+                    logger.info(f"🗑️ Request {req_id} dihapus dari Redis karena gagal captcha")
+                except Exception as e:
+                    logger.error(f"❌ Gagal hapus Redis: {e}")
+                # Hapus dari waiting flag
+                waiting_for_result.pop(req_info['chat_id'], None)
+                del active_requests[req_id]
+                logger.info(f"🗑️ Request {req_id} dihapus dari active_requests karena gagal captcha")
+
+            # Reset status captcha lebih cepat
+            bot_status['in_captcha'] = False
+            if captcha_timer_task:
+                captcha_timer_task.cancel()
+                captcha_timer_task = None
 
 # ==================== PROSES ANTRIAN ====================
 async def process_queue():
