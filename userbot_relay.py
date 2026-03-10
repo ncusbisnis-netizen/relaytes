@@ -841,13 +841,6 @@ async def message_handler(event):
             for req_id, req_info in active_requests.items():
                 req_info['start_time'] = time.time()
                 logger.info(f"⏱️ Reset timeout untuk request {req_id} karena captcha")
-                
-                # Update status ke user
-                await edit_status_message(
-                    req_info['chat_id'],
-                    req_info['message_id'],
-                    "⏳ Captcha terdeteksi, sedang memproses..."
-                )
         else:
             logger.warning("⚠️ Captcha terdeteksi tapi tidak ada request aktif")
 
@@ -907,28 +900,12 @@ async def message_handler(event):
             
             await client.send_message(BOT_A_USERNAME, "/verify")
             logger.info("📤 Mengirim /verify tanpa kode sebagai percobaan")
-            
-            if active_requests:
-                req_id, req_info = next(iter(active_requests.items()))
-                await edit_status_message(
-                    req_info['chat_id'],
-                    req_info['message_id'],
-                    "⚠️ Gagal membaca kode captcha. Mencoba lagi..."
-                )
             return
 
         # Jika berhasil mendapatkan kode
         if captcha_code and len(captcha_code) == 6:
             await client.send_message(BOT_A_USERNAME, f"/verify {captcha_code}")
             logger.info(f"📤 Perintah verify {captcha_code} dikirim")
-            
-            if active_requests:
-                req_id, req_info = next(iter(active_requests.items()))
-                await edit_status_message(
-                    req_info['chat_id'],
-                    req_info['message_id'],
-                    f"✅ Kode captcha terdeteksi: {captcha_code}\n⏳ Menunggu verifikasi..."
-                )
             
             # Tunggu respon verifikasi
             await asyncio.sleep(5)
