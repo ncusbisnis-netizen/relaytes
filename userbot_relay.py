@@ -862,26 +862,26 @@ is_captcha = (
 if is_captcha:
     logger.warning("🚫 CAPTCHA terdeteksi! Memproses dengan force verify...")
     bot_status['in_captcha'] = True
-
+    
     # Reset timeout untuk request yang sedang aktif (beri waktu lebih)
     if active_requests:
         for req_id, req_info in active_requests.items():
-            req_info['start_time'] = time.time() + 60  # Tambah 60 detik ekstra
+            req_info['start_time'] = time.time() + 60
             logger.info(f"⏱️ Reset timeout untuk request {req_id} karena captcha (+60 detik)")
     else:
         logger.warning("⚠️ Captcha terdeteksi tapi tidak ada request aktif")
-
+    
     # Batalkan timer sebelumnya jika ada
     if captcha_timer_task:
         captcha_timer_task.cancel()
-
+    
     # Set timer lebih panjang untuk captcha
     async def reset_captcha():
-        await asyncio.sleep(CAPTCHA_TIMEOUT + 30)  # Tambah 30 detik
+        await asyncio.sleep(CAPTCHA_TIMEOUT + 30)
         bot_status['in_captcha'] = False
         logger.info("Captcha timeout, status direset")
     captcha_timer_task = asyncio.create_task(reset_captcha())
-
+    
     # AMBIL KODE CAPTCHA
     captcha_code = None
     
@@ -890,10 +890,10 @@ if is_captcha:
     if len(all_digits) >= 6:
         captcha_code = ''.join(all_digits[:6])
         logger.info(f"🔑 Kode captcha dari teks: {captcha_code}")
-
+    
     # KALAU ADA FOTO, LAKUKAN OCR BERULANG
     if not captcha_code and message.photo:
-        for attempt in range(3):  # Coba 3 kali
+        for attempt in range(3):
             try:
                 logger.info(f"📸 Percobaan OCR ke-{attempt+1} dari 3")
                 captcha_code = await read_number_from_photo_online_force(message)
@@ -910,16 +910,15 @@ if is_captcha:
             except Exception as e:
                 logger.error(f"❌ OCR percobaan {attempt+1} error: {e}")
             
-            if attempt < 2 and not captcha_code:  # Jeda kalau masih gagal
+            if attempt < 2 and not captcha_code:
                 await asyncio.sleep(3)
-
-    # FORCE VERIFY - KIRIM APAPUN YANG DIDAPAT
+    
+    # FORCE VERIFY
     if captcha_code:
         verify_msg = f"/verify {captcha_code}"
         await client.send_message(BOT_A_USERNAME, verify_msg)
         logger.info(f"📤 Perintah verify DIPAKSA dikirim: {verify_msg}")
         
-        # Tunggu bentar, kalau masih captcha, kirim ulang
         await asyncio.sleep(3)
         if bot_status['in_captcha']:
             logger.warning("⚠️ Verify mungkin gagal, kirim ulang...")
@@ -927,7 +926,6 @@ if is_captcha:
             logger.info(f"📤 Perintah verify ULANG: {verify_msg}")
     
     else:
-        # GAGAL DAPAT KODE, COBA PAKAI 000000
         logger.error("❌ Gagal dapat kode captcha, coba pakai 000000")
         
         if active_requests:
@@ -939,7 +937,6 @@ if is_captcha:
             if bot_status['in_captcha']:
                 logger.error("❌ Masih captcha, batalkan request...")
                 
-                # Batalkan request
                 req_id, req_info = next(iter(active_requests.items()))
                 await edit_status_message(
                     req_info['chat_id'],
@@ -947,7 +944,6 @@ if is_captcha:
                     "Gagal memproses captcha. Coba lagi."
                 )
                 
-                # Hapus dari Redis
                 try:
                     head = r.lindex('pending_requests', 0)
                     if head and head.decode('utf-8') == req_id:
@@ -966,6 +962,8 @@ if is_captcha:
                     captcha_timer_task = None
         
         cleanup_downloaded_photos()
+    
+    return  # PENTING: return biar ga lanjut ke handler lain
 
 # ==================== PROSES ANTRIAN ====================
 async def process_queue():
