@@ -381,7 +381,7 @@ def validate_mlbb_gopay_sync(user_id, server_id):
         logger.error(f"❌ Error: {e}")
         return {'status': False, 'message': str(e)}
 
-# (fungsi clean_bind_text kedua – sebenarnya duplikat, biarkan saja)
+# ============ TAMBAHKAN FUNGSI INI DI SINI ============
 def clean_bind_text(text):
     """Bersihkan text bind info"""
     
@@ -424,6 +424,7 @@ def clean_bind_text(text):
     text = re.sub(r'\s+', ' ', text).strip()
     
     return text
+# =======================================================
 
 async def read_number_from_photo_online(message):
     """OCR menggunakan ocr.space dengan timeout 60 detik"""
@@ -600,22 +601,19 @@ Device Login: Android {android} | iOS {ios}"""
     }
     return final, reply_markup
 
-# ==================== FUNGSI KOMUNIKASI DENGAN BOT B ====================
-# <-- PERUBAHAN PERTAMA: tambah parameter reply_to_message_id -->
-async def send_status_to_user(chat_id, text, reply_to_message_id=None, reply_markup=None):
-    """Kirim pesan status ke user melalui Bot B (bisa sebagai reply)"""
+# ==================== FUNGSI KOMUNIKASI DENGAN BOT B (dengan logging, tanpa parse_mode) ====================
+async def send_status_to_user(chat_id, text, reply_markup=None):
+    """Kirim pesan status ke user melalui Bot B (pesan baru)"""
     url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
     data = {
         'chat_id': chat_id,
         'text': text,
         # parse_mode dihapus (None) untuk menghindari error karakter khusus
     }
-    if reply_to_message_id:                                # <-- BARIS BARU
-        data['reply_to_message_id'] = reply_to_message_id # <-- BARIS BARU
     if reply_markup:
         data['reply_markup'] = json.dumps(reply_markup)
     try:
-        logger.info(f"📤 Mengirim status ke user {chat_id}" + (f" (reply ke {reply_to_message_id})" if reply_to_message_id else ""))
+        logger.info(f"📤 Mengirim status ke user {chat_id}: {text[:50]}...")
         response = requests.post(url, json=data, timeout=10)
         if response.status_code == 200:
             msg_id = response.json()['result']['message_id']
@@ -899,9 +897,7 @@ async def process_queue():
 
                     req_data = json.loads(req_json)
                     user_id = req_data['chat_id']
-                    # <-- PERUBAHAN KEDUA: baca reply_to_message_id jika ada -->
-                    reply_to_message_id = req_data.get('reply_to_message_id')  # None jika tidak ada
-                    logger.info(f"📋 Memproses request {req_id} dari user {user_id}" + (f" (reply ke {reply_to_message_id})" if reply_to_message_id else ""))
+                    logger.info(f"📋 Memproses request {req_id} dari user {user_id}")
 
                     # Jika user ini sedang menunggu hasil (misal dari request sebelumnya), tunda
                     if waiting_for_result.get(user_id, False):
@@ -911,9 +907,9 @@ async def process_queue():
                         await asyncio.sleep(5)
                         continue
 
-                    # Kirim status "Sedang diproses" ke user, sebagai reply jika diperlukan
+                    # Kirim status "Sedang diproses" ke user
                     status_text = "Proses request..."
-                    msg_id = await send_status_to_user(user_id, status_text, reply_to_message_id=reply_to_message_id)  # <-- gunakan reply_to_message_id
+                    msg_id = await send_status_to_user(user_id, status_text)
                     if not msg_id:
                         logger.error(f"❌ Gagal mengirim status ke user {user_id}, request dibatalkan")
                         r.lpop('pending_requests')
