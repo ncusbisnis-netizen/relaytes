@@ -585,7 +585,7 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios)
             bind_info.append(f"• {kw}: empty.")
     
     final = f"""INFORMATION ACCOUNT:
-ID Server: {uid} {sid}
+ID Server: {uid} ({sid})
 Nickname: {nickname}
 Region: {region}
 
