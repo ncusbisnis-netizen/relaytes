@@ -585,8 +585,7 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios)
             bind_info.append(f"• {kw}: empty.")
     
     final = f"""INFORMATION ACCOUNT:
-ID: {uid}
-Server: {sid}
+ID Server: {uid} {sid}
 Nickname: {nickname}
 Region: {region}
 
@@ -597,7 +596,7 @@ Device Login: Android {android} | iOS {ios}"""
     
     reply_markup = {
         'inline_keyboard': [
-            [{'text': 'STOK ADMIN', 'url': STOK_ADMIN_URL}]
+            [{'text': 'Stok Admin', 'url': STOK_ADMIN_URL}]
         ]
     }
     return final, reply_markup
