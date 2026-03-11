@@ -350,7 +350,7 @@ async def send_status_to_user(chat_id, text, reply_to_message_id=None, reply_mar
             logger.info(f"✅ Terkirim, message_id: {msg_id}")
             return msg_id
         else:
-            logger.error(f"❌ Gagal: {response.status_code}")
+            logger.error(f"❌ Gagal: {response.status_code} - {response.text}")
     except Exception as e:
         logger.error(f"❌ Exception: {e}")
     return None
@@ -366,14 +366,63 @@ async def edit_status_message(chat_id, message_id, text, reply_markup=None):
     if reply_markup:
         data['reply_markup'] = json.dumps(reply_markup)
     try:
-        logger.info(f"✏️ Mengedit pesan {message_id}")
+        logger.info(f"✏️ Mengedit pesan {message_id} untuk user {chat_id}")
         response = requests.post(url, json=data, timeout=10)
         if response.status_code == 200:
             logger.info(f"✅ Pesan {message_id} berhasil diedit")
         else:
-            logger.error(f"❌ Gagal edit: {response.status_code}")
+            logger.error(f"❌ Gagal edit: {response.status_code} - {response.text}")
     except Exception as e:
         logger.error(f"❌ Exception: {e}")
+
+# ==================== DETEKSI CAPTCHA YANG AKURAT ====================
+def is_captcha_message(message, text):
+    """Deteksi apakah pesan benar-benar captcha"""
+    
+    # 1. Cek kata kunci captcha yang JELAS
+    captcha_keywords = [
+        'captcha', 
+        'kode captcha', 
+        'masukkan kode', 
+        'verify', 
+        'verifikasi', 
+        '🔒',
+        'enter code',
+        'code:'
+    ]
+    
+    text_lower = text.lower()
+    for keyword in captcha_keywords:
+        if keyword in text_lower:
+            return True
+    
+    # 2. Cek format khusus Bot A untuk captcha
+    if '🔒 Masukkan kode captcha' in text:
+        return True
+    
+    # 3. Jika ada foto DAN teks mengandung perintah masukkan kode
+    if message.photo and ('masukkan' in text_lower or 'enter' in text_lower):
+        return True
+    
+    # 4. HATI-HATI dengan 6 digit angka
+    if re.search(r'\d{6}', text):
+        # JANGAN ANGGAP CAPTCHA jika ini adalah command
+        if text.startswith('/'):
+            return False
+        
+        # JANGAN ANGGAP CAPTCHA jika ini adalah hasil info
+        if 'ID Server' in text or 'BIND ACCOUNT' in text or 'INFORMATION ACCOUNT' in text:
+            return False
+        
+        # JANGAN ANGGAP CAPTCHA jika ini adalah response dari GoPay
+        if 'GoPay' in text or 'Nickname' in text or 'Region' in text:
+            return False
+        
+        # HANYA ANGGAP CAPTCHA jika ada kata kunci pendukung
+        if any(kw in text_lower for kw in ['kode', 'code', 'captcha', 'masukkan']):
+            return True
+    
+    return False
 
 # ==================== TIMEOUT CHECKER ====================
 async def timeout_checker():
@@ -388,19 +437,33 @@ async def timeout_checker():
         for req_id, req_data in list(active_requests.items()):
             if now - req_data['start_time'] > REQUEST_TIMEOUT:
                 logger.warning(f"⏰ Timeout request {req_id}")
+                
+                # Kirim pesan timeout ke user
                 await edit_status_message(
                     req_data['chat_id'],
                     req_data['message_id'],
-                    "Request timeout. Silakan coba lagi."
+                    "⏰ Request timeout. Silakan coba lagi."
                 )
+                
+                # Hapus dari Redis
                 try:
+                    # Hapus dari antrian jika masih ada
+                    head = r.lindex('pending_requests', 0)
+                    if head and head.decode('utf-8') == req_id:
+                        r.lpop('pending_requests')
                     r.delete(req_id)
                 except:
                     pass
-                waiting_for_result.pop(f"{req_data['chat_id']}:{req_data['user_id_original']}", None)
+                
+                # Hapus dari waiting flag
+                waiting_key = f"{req_data['chat_id']}:{req_data['user_id_original']}"
+                waiting_for_result.pop(waiting_key, None)
+                
                 to_remove.append(req_id)
+                
         for req_id in to_remove:
             active_requests.pop(req_id, None)
+            
         await asyncio.sleep(1)
 
 # ==================== HANDLER PESAN DARI BOT A ====================
@@ -418,6 +481,122 @@ async def message_handler(event):
         return
 
     logger.info(f"📩 Dari Bot A: {text[:100]}")
+
+    # ========== CEK CAPTCHA DULU ==========
+    if is_captcha_message(message, text):
+        logger.warning("🚫 CAPTCHA terdeteksi!")
+        
+        # Reset timeout untuk request yang sedang aktif
+        if active_requests:
+            for req_id, req_info in active_requests.items():
+                req_info['start_time'] = time.time()
+                logger.info(f"⏱️ Reset timeout untuk {req_id}")
+                
+                # Kirim notifikasi ke user
+                await edit_status_message(
+                    req_info['chat_id'],
+                    req_info['message_id'],
+                    "⚠️ Captcha terdeteksi, sedang diproses otomatis..."
+                )
+        else:
+            logger.warning("⚠️ Captcha terdeteksi tapi tidak ada request aktif")
+            # Jika tidak ada request aktif, reset status captcha
+            bot_status['in_captcha'] = False
+            return
+
+        bot_status['in_captcha'] = True
+
+        # Batalkan timer sebelumnya
+        if captcha_timer_task:
+            captcha_timer_task.cancel()
+
+        # Set timer untuk mematikan status captcha
+        async def reset_captcha():
+            await asyncio.sleep(CAPTCHA_TIMEOUT)
+            bot_status['in_captcha'] = False
+            logger.info("Captcha timeout, status direset")
+            # Beri tahu user
+            if active_requests:
+                for req_id, req_info in active_requests.items():
+                    await edit_status_message(
+                        req_info['chat_id'],
+                        req_info['message_id'],
+                        "❌ Gagal memproses captcha. Silakan coba lagi nanti."
+                    )
+        captcha_timer_task = asyncio.create_task(reset_captcha())
+
+        # Ambil kode captcha
+        captcha_code = None
+
+        # Cek di teks (format yang umum: "Kode: 123456")
+        code_match = re.search(r'kode\s*[:\s]*(\d{6})', text, re.IGNORECASE)
+        if code_match:
+            captcha_code = code_match.group(1)
+            logger.info(f"🔑 Kode captcha dari teks: {captcha_code}")
+
+        # Jika tidak ada, coba cari 6 digit angka dengan konteks
+        if not captcha_code:
+            digits = re.findall(r'\b(\d{6})\b', text)
+            if digits and len(digits) > 0:
+                # Ambil 6 digit pertama
+                candidate = digits[0]
+                # Cek apakah ini ID user (biasanya 6-10 digit, tapi bisa juga 6 digit)
+                # Jika ragu, lebih baik minta manual daripada salah
+                if len(candidate) == 6:
+                    captcha_code = candidate
+                    logger.info(f"🔑 Kode captcha 6 digit: {captcha_code}")
+
+        # OCR jika ada foto
+        if not captcha_code and message.photo:
+            for attempt in range(2):
+                try:
+                    logger.info(f"📸 OCR percobaan {attempt+1}")
+                    captcha_code = await read_number_from_photo_online(message)
+                    if captcha_code:
+                        logger.info(f"🔑 OCR sukses: {captcha_code}")
+                        break
+                except Exception as e:
+                    logger.error(f"❌ OCR error: {e}")
+                if attempt == 0:
+                    await asyncio.sleep(2)
+
+        if captcha_code and len(captcha_code) == 6:
+            # Kirim verify ke Bot A
+            await client.send_message(BOT_A_USERNAME, f"/verify {captcha_code}")
+            logger.info("📤 Perintah verify dikirim")
+            
+            # Update status user
+            if active_requests:
+                for req_id, req_info in active_requests.items():
+                    await edit_status_message(
+                        req_info['chat_id'],
+                        req_info['message_id'],
+                        f"✅ Kode captcha {captcha_code} terkirim, menunggu verifikasi..."
+                    )
+        else:
+            logger.error("❌ Gagal mendapatkan kode captcha")
+            cleanup_downloaded_photos()
+
+            # Batalkan request yang terkena captcha
+            if active_requests:
+                for req_id, req_info in list(active_requests.items()):
+                    await edit_status_message(
+                        req_info['chat_id'],
+                        req_info['message_id'],
+                        "❌ Gagal memproses captcha. Silakan coba lagi nanti."
+                    )
+                    # Hapus dari waiting flag
+                    waiting_key = f"{req_info['chat_id']}:{req_info['user_id_original']}"
+                    waiting_for_result.pop(waiting_key, None)
+                    del active_requests[req_id]
+
+            # Reset status captcha lebih cepat
+            bot_status['in_captcha'] = False
+            if captcha_timer_task:
+                captcha_timer_task.cancel()
+                captcha_timer_task = None
+        
+        return
 
     # ========== 1. HASIL INFO ==========
     if text.startswith('──────────────────────') and 'BIND ACCOUNT INFO' in text:
@@ -465,7 +644,9 @@ async def message_handler(event):
 
         # Bersihkan
         del active_requests[req_id]
-        waiting_for_result.pop(f"{chat_id}:{user_id_original}", None)
+        waiting_key = f"{chat_id}:{user_id_original}"
+        waiting_for_result.pop(waiting_key, None)
+        
         try:
             r.delete(req_id)
         except:
@@ -486,81 +667,19 @@ async def message_handler(event):
 
         if active_requests:
             await asyncio.sleep(5)
-            req_id, req_info = next(iter(active_requests.items()))
-            cmd = f"{req_info['command']} {req_info['args'][0]} {req_info['args'][1]}"
-            await client.send_message(BOT_A_USERNAME, cmd)
-            logger.info(f"🔄 Auto-retry: {cmd}")
-            req_info['start_time'] = time.time()
-        return
-
-    # ========== 3. CAPTCHA ==========
-    if (message.photo or 
-        'captcha' in text.lower() or 
-        re.search(r'\d{6}', text) or 
-        '🔒 Masukkan kode captcha' in text):
-        
-        logger.warning("🚫 CAPTCHA terdeteksi!")
-        bot_status['in_captcha'] = True
-
-        if active_requests:
             for req_id, req_info in active_requests.items():
+                cmd = f"{req_info['command']} {req_info['args'][0]} {req_info['args'][1]}"
+                await client.send_message(BOT_A_USERNAME, cmd)
+                logger.info(f"🔄 Auto-retry: {cmd}")
                 req_info['start_time'] = time.time()
-                logger.info(f"⏱️ Reset timeout untuk {req_id}")
-
-        if captcha_timer_task:
-            captcha_timer_task.cancel()
-
-        async def reset_captcha():
-            await asyncio.sleep(CAPTCHA_TIMEOUT)
-            bot_status['in_captcha'] = False
-            logger.info("Captcha timeout, status direset")
-        captcha_timer_task = asyncio.create_task(reset_captcha())
-
-        # Ambil kode captcha
-        captcha_code = None
-        digits = re.findall(r'\d', text)
-        if len(digits) >= 6:
-            captcha_code = ''.join(digits[:6])
-            logger.info(f"🔑 Kode dari teks: {captcha_code}")
-
-        if not captcha_code and message.photo:
-            for attempt in range(2):
-                try:
-                    logger.info(f"📸 OCR percobaan {attempt+1}")
-                    captcha_code = await read_number_from_photo_online(message)
-                    if captcha_code:
-                        logger.info(f"🔑 OCR sukses: {captcha_code}")
-                        break
-                except Exception as e:
-                    logger.error(f"❌ OCR error: {e}")
-                if attempt == 0:
-                    await asyncio.sleep(2)
-
-        if captcha_code and len(captcha_code) == 6:
-            await client.send_message(BOT_A_USERNAME, f"/verify {captcha_code}")
-            logger.info("📤 Perintah verify dikirim")
-        else:
-            logger.error("❌ Gagal dapat kode captcha")
-            cleanup_downloaded_photos()
-
-            if active_requests:
-                req_id, req_info = next(iter(active_requests.items()))
+                
+                # Update status user
                 await edit_status_message(
                     req_info['chat_id'],
                     req_info['message_id'],
-                    "Gagal memproses captcha. Coba lagi."
+                    "🔄 Verifikasi sukses, mengirim ulang request..."
                 )
-                try:
-                    r.delete(req_id)
-                except:
-                    pass
-                waiting_for_result.pop(f"{req_info['chat_id']}:{req_info['user_id_original']}", None)
-                del active_requests[req_id]
-
-            bot_status['in_captcha'] = False
-            if captcha_timer_task:
-                captcha_timer_task.cancel()
-                captcha_timer_task = None
+        return
 
 # ==================== PROSES ANTRIAN ====================
 async def process_queue():
@@ -602,11 +721,31 @@ async def process_queue():
                     # Cek apakah user ini sedang menunggu
                     waiting_key = f"{chat_id}:{user_id_original}"
                     if waiting_for_result.get(waiting_key, False):
-                        logger.info(f"⏳ User {user_id_original} masih menunggu")
-                        r.lpop('pending_requests')
-                        r.rpush('pending_requests', req_id)
-                        await asyncio.sleep(5)
-                        continue
+                        # CEK APAKAH REQUEST LAMA MASIH ADA DI ACTIVE_REQUESTS?
+                        found = False
+                        for old_req_id, old_req_data in list(active_requests.items()):
+                            if (old_req_data['chat_id'] == chat_id and 
+                                old_req_data['user_id_original'] == user_id_original):
+                                found = True
+                                # Cek sudah berapa lama
+                                age = time.time() - old_req_data['start_time']
+                                if age > REQUEST_TIMEOUT:
+                                    logger.warning(f"⏰ Request lama {old_req_id} timeout, dihapus")
+                                    # Hapus yang lama
+                                    del active_requests[old_req_id]
+                                    waiting_for_result.pop(waiting_key, None)
+                                    found = False
+                                break
+                        
+                        if found:
+                            logger.info(f"⏳ User {user_id_original} masih menunggu, pindahkan ke belakang")
+                            r.lpop('pending_requests')
+                            r.rpush('pending_requests', req_id)
+                            await asyncio.sleep(5)
+                            continue
+                        else:
+                            # Request lama sudah hilang, hapus flag waiting
+                            waiting_for_result.pop(waiting_key, None)
 
                     # Kirim status "Sedang diproses" (dengan reply jika di grup)
                     status_text = "⏳ Proses request..."
@@ -635,7 +774,8 @@ async def process_queue():
                     
                     logger.info(f"✅ Request {req_id} disimpan")
                     
-                    # Kirim ke Bot A
+                    # Kirim ke Bot A (TETAP PAKAI COMMAND ASLI DARI USER)
+                    # Bot A akan tetap memproses meskipun command-nya /cekinfo
                     cmd = f"{command} {args[0]} {args[1]}"
                     await client.send_message(BOT_A_USERNAME, cmd)
                     logger.info(f"📤 Mengirim ke Bot A: {cmd}")
