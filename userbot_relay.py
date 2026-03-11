@@ -381,7 +381,7 @@ def validate_mlbb_gopay_sync(user_id, server_id):
         logger.error(f"❌ Error: {e}")
         return {'status': False, 'message': str(e)}
 
-# ============ TAMBAHKAN FUNGSI INI DI SINI ============
+# (fungsi clean_bind_text kedua – sebenarnya duplikat, biarkan saja)
 def clean_bind_text(text):
     """Bersihkan text bind info"""
     
@@ -424,7 +424,6 @@ def clean_bind_text(text):
     text = re.sub(r'\s+', ' ', text).strip()
     
     return text
-# =======================================================
 
 async def read_number_from_photo_online(message):
     """OCR menggunakan ocr.space dengan timeout 60 detik"""
@@ -601,19 +600,22 @@ Device Login: Android {android} | iOS {ios}"""
     }
     return final, reply_markup
 
-# ==================== FUNGSI KOMUNIKASI DENGAN BOT B (dengan logging, tanpa parse_mode) ====================
-async def send_status_to_user(chat_id, text, reply_markup=None):
-    """Kirim pesan status ke user melalui Bot B (pesan baru)"""
+# ==================== FUNGSI KOMUNIKASI DENGAN BOT B ====================
+# <-- PERUBAHAN PERTAMA: tambah parameter reply_to_message_id -->
+async def send_status_to_user(chat_id, text, reply_to_message_id=None, reply_markup=None):
+    """Kirim pesan status ke user melalui Bot B (bisa sebagai reply)"""
     url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
     data = {
         'chat_id': chat_id,
         'text': text,
         # parse_mode dihapus (None) untuk menghindari error karakter khusus
     }
+    if reply_to_message_id:                                # <-- BARIS BARU
+        data['reply_to_message_id'] = reply_to_message_id # <-- BARIS BARU
     if reply_markup:
         data['reply_markup'] = json.dumps(reply_markup)
     try:
-        logger.info(f"📤 Mengirim status ke user {chat_id}: {text[:50]}...")
+        logger.info(f"📤 Mengirim status ke user {chat_id}" + (f" (reply ke {reply_to_message_id})" if reply_to_message_id else ""))
         response = requests.post(url, json=data, timeout=10)
         if response.status_code == 200:
             msg_id = response.json()['result']['message_id']
@@ -762,27 +764,30 @@ async def message_handler(event):
         return
 
     # ========== 2. VERIFIKASI SUKSES ==========
-    if 'verification successful' in text.lower() or '✅ Verifikasi berhasil!' in text:
-        logger.info("✅ Verifikasi sukses, auto-retry dalam 5 detik")
+if 'verification successful' in text.lower() or '✅ Verifikasi berhasil!' in text:
+    logger.info("✅ Verifikasi sukses, auto-retry dalam 5 detik")
 
-        # Matikan timer captcha jika ada
-        if captcha_timer_task:
-            captcha_timer_task.cancel()
-            captcha_timer_task = None
-        bot_status['in_captcha'] = False
+    # Matikan timer captcha jika ada
+    if captcha_timer_task:
+        captcha_timer_task.cancel()
+        captcha_timer_task = None
+    bot_status['in_captcha'] = False
 
-        # Auto-retry untuk request yang sedang aktif
-        if active_requests:
-            await asyncio.sleep(5)
-            req_id, req_info = next(iter(active_requests.items()))
-            cmd = f"{req_info['command']} {req_info['args'][0]} {req_info['args'][1]}"
-            await client.send_message(BOT_A_USERNAME, cmd)
-            logger.info(f"🔄 Auto-retry: {cmd}")
-            # Update waktu mulai
-            req_info['start_time'] = time.time()
-        else:
-            logger.warning("⚠️ Tidak ada request aktif untuk auto-retry")
-        return
+    # Auto-retry untuk request yang sedang aktif
+    if active_requests:
+        # Simpan data request SEBELUM menunggu
+        req_id, req_info = next(iter(active_requests.items()))
+        cmd_to_retry = f"{req_info['command']} {req_info['args'][0]} {req_info['args'][1]}"
+        await asyncio.sleep(5)
+        # Kirim ulang perintah yang sama
+        await client.send_message(BOT_A_USERNAME, cmd_to_retry)
+        logger.info(f"🔄 Auto-retry: {cmd_to_retry}")
+        # Update waktu mulai jika request masih ada
+        if req_id in active_requests:
+            active_requests[req_id]['start_time'] = time.time()
+    else:
+        logger.warning("⚠️ Tidak ada request aktif untuk auto-retry")
+    return
 
     # ========== 3. CAPTCHA ==========
     if (message.photo or 
@@ -897,7 +902,9 @@ async def process_queue():
 
                     req_data = json.loads(req_json)
                     user_id = req_data['chat_id']
-                    logger.info(f"📋 Memproses request {req_id} dari user {user_id}")
+                    # <-- PERUBAHAN KEDUA: baca reply_to_message_id jika ada -->
+                    reply_to_message_id = req_data.get('reply_to_message_id')  # None jika tidak ada
+                    logger.info(f"📋 Memproses request {req_id} dari user {user_id}" + (f" (reply ke {reply_to_message_id})" if reply_to_message_id else ""))
 
                     # Jika user ini sedang menunggu hasil (misal dari request sebelumnya), tunda
                     if waiting_for_result.get(user_id, False):
@@ -907,9 +914,9 @@ async def process_queue():
                         await asyncio.sleep(5)
                         continue
 
-                    # Kirim status "Sedang diproses" ke user
+                    # Kirim status "Sedang diproses" ke user, sebagai reply jika diperlukan
                     status_text = "Proses request..."
-                    msg_id = await send_status_to_user(user_id, status_text)
+                    msg_id = await send_status_to_user(user_id, status_text, reply_to_message_id=reply_to_message_id)  # <-- gunakan reply_to_message_id
                     if not msg_id:
                         logger.error(f"❌ Gagal mengirim status ke user {user_id}, request dibatalkan")
                         r.lpop('pending_requests')
