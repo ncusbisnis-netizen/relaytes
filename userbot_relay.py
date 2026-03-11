@@ -764,30 +764,27 @@ async def message_handler(event):
         return
 
     # ========== 2. VERIFIKASI SUKSES ==========
-if 'verification successful' in text.lower() or '✅ Verifikasi berhasil!' in text:
-    logger.info("✅ Verifikasi sukses, auto-retry dalam 5 detik")
+    if 'verification successful' in text.lower() or '✅ Verifikasi berhasil!' in text:
+        logger.info("✅ Verifikasi sukses, auto-retry dalam 5 detik")
 
-    # Matikan timer captcha jika ada
-    if captcha_timer_task:
-        captcha_timer_task.cancel()
-        captcha_timer_task = None
-    bot_status['in_captcha'] = False
+        # Matikan timer captcha jika ada
+        if captcha_timer_task:
+            captcha_timer_task.cancel()
+            captcha_timer_task = None
+        bot_status['in_captcha'] = False
 
-    # Auto-retry untuk request yang sedang aktif
-    if active_requests:
-        # Simpan data request SEBELUM menunggu
-        req_id, req_info = next(iter(active_requests.items()))
-        cmd_to_retry = f"{req_info['command']} {req_info['args'][0]} {req_info['args'][1]}"
-        await asyncio.sleep(5)
-        # Kirim ulang perintah yang sama
-        await client.send_message(BOT_A_USERNAME, cmd_to_retry)
-        logger.info(f"🔄 Auto-retry: {cmd_to_retry}")
-        # Update waktu mulai jika request masih ada
-        if req_id in active_requests:
-            active_requests[req_id]['start_time'] = time.time()
-    else:
-        logger.warning("⚠️ Tidak ada request aktif untuk auto-retry")
-    return
+        # Auto-retry untuk request yang sedang aktif
+        if active_requests:
+            await asyncio.sleep(5)
+            req_id, req_info = next(iter(active_requests.items()))
+            cmd = f"{req_info['command']} {req_info['args'][0]} {req_info['args'][1]}"
+            await client.send_message(BOT_A_USERNAME, cmd)
+            logger.info(f"🔄 Auto-retry: {cmd}")
+            # Update waktu mulai
+            req_info['start_time'] = time.time()
+        else:
+            logger.warning("⚠️ Tidak ada request aktif untuk auto-retry")
+        return
 
     # ========== 3. CAPTCHA ==========
     if (message.photo or 
