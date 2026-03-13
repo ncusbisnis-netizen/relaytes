@@ -99,6 +99,63 @@ class VheerOCRScraper:
             time.sleep(self.min_delay - (now - self.last_request_time))
         self.last_request_time = time.time()
     
+    def _extract_numbers_from_html(self, html_text: str) -> str:
+        """
+        Ekstrak 6 digit angka dari HTML dengan berbagai metode
+        """
+        soup = BeautifulSoup(html_text, 'html.parser')
+        
+        # Metode 1: Cari di elemen dengan class yang mengandung result/output/ocr
+        result_elements = soup.find_all(['div', 'span', 'p', 'pre'], 
+                                       class_=re.compile(r'result|output|ocr|text|content'))
+        
+        for elem in result_elements:
+            text = elem.get_text(strip=True)
+            # Cari angka 6 digit
+            numbers = re.findall(r'\b\d{6}\b', text)
+            if numbers:
+                logger.info(f"   ✅ Angka ditemukan di element class: {numbers[0]}")
+                return numbers[0]
+        
+        # Metode 2: Cari di semua teks yang visible
+        visible_text = soup.get_text()
+        
+        # Cari semua angka 6 digit
+        candidates = re.findall(r'\b\d{6}\b', visible_text)
+        
+        if candidates:
+            # Prioritaskan angka yang muncul di dekat kata kunci
+            for angka in candidates:
+                pos = visible_text.find(angka)
+                if pos > 0:
+                    # Ambil konteks 100 karakter sebelum dan sesudah
+                    start = max(0, pos - 100)
+                    end = min(len(visible_text), pos + 100)
+                    context = visible_text[start:end].lower()
+                    
+                    # Kata kunci yang menandakan ini captcha
+                    keywords = ['kode', 'code', 'captcha', 'verify', 'verifikasi', 
+                              'masukkan', 'input', 'captcha code']
+                    
+                    if any(kw in context for kw in keywords):
+                        logger.info(f"   ✅ Angka {angka} ditemukan di konteks captcha")
+                        return angka
+            
+            # Kalau tidak ada yang cocok, ambil angka pertama
+            logger.info(f"   ✅ Angka pertama ditemukan: {candidates[0]}")
+            return candidates[0]
+        
+        # Metode 3: Cari pola 6 digit beruntun tanpa batasan word boundary
+        all_digits = re.findall(r'\d{6,}', visible_text)
+        if all_digits:
+            # Ambil 6 digit pertama dari string digit terpanjang
+            longest = max(all_digits, key=len)
+            angka = longest[:6]
+            logger.info(f"   ✅ Angka 6 digit dari string panjang: {angka}")
+            return angka
+        
+        return ''
+    
     def _try_upload(self, image_path: str) -> tuple:
         """
         Upload gambar ke Vheer.com
@@ -127,31 +184,15 @@ class VheerOCRScraper:
                 if resp.status_code == 200:
                     logger.info(f"   ✅ Upload berhasil!")
                     
-                    # Parse JSON response
-                    try:
-                        result = resp.json()
-                        logger.info(f"   📄 Response: {json.dumps(result)[:200]}")
-                        
-                        # Ambil ID dari response
-                        image_id = result.get('id')
-                        
-                        # Cari hasil OCR di paragraphs
-                        paragraphs = result.get('paragraphs', [])
-                        if paragraphs and len(paragraphs) > 0:
-                            text = paragraphs[0].get('text', '')
-                            if text:
-                                logger.info(f"   ✅ Hasil OCR langsung: {text}")
-                                return True, image_id, text
-                        
-                        # Kalau belum dapat hasil, return ID dulu
-                        if image_id:
-                            return True, image_id, ''
-                        
-                    except Exception as e:
-                        logger.error(f"❌ Gagal parse JSON: {e}")
-                        # Mungkin response plain text
-                        if resp.text:
-                            return True, None, resp.text
+                    # Response adalah HTML, ekstrak angka
+                    angka = self._extract_numbers_from_html(resp.text)
+                    
+                    if angka:
+                        logger.info(f"   ✅ Angka berhasil diekstrak: {angka}")
+                        return True, None, angka
+                    else:
+                        logger.warning("   ⚠️ Tidak menemukan angka dalam response")
+                        return True, None, resp.text
                 
                 return False, None, ''
                         
@@ -159,69 +200,37 @@ class VheerOCRScraper:
                 logger.error(f"❌ Error upload: {e}")
                 return False, None, ''
     
-    def _try_get_result(self, image_id: str, max_retries: int = 5) -> str:
-        """
-        Ambil hasil OCR berdasarkan ID (kalau belum dapat di response pertama)
-        """
-        # Format URL untuk ambil hasil
-        result_urls = [
-            f"https://vheer.com/api/result/{image_id}",
-            f"https://vheer.com/app/image-to-text/result/{image_id}",
-        ]
-        
-        for attempt in range(max_retries):
-            for url in result_urls:
-                try:
-                    self._wait_for_rate_limit()
-                    logger.info(f"📥 Mencoba ambil hasil dari: {url}")
-                    
-                    resp = self.session.get(url, timeout=15)
-                    
-                    if resp.status_code == 200:
-                        try:
-                            data = resp.json()
-                            
-                            # Cari teks di berbagai kemungkinan key
-                            text = (data.get('text') or 
-                                   data.get('result') or 
-                                   data.get('data', {}).get('text') or
-                                   data.get('paragraphs', [{}])[0].get('text'))
-                            
-                            if text:
-                                logger.info(f"   ✅ Hasil ditemukan: {text[:50]}")
-                                return text
-                        except:
-                            # Mungkin plain text
-                            if resp.text and not resp.text.startswith('<'):
-                                return resp.text
-                    
-                except Exception as e:
-                    logger.debug(f"Error ambil hasil: {e}")
-            
-            # Exponential backoff
-            if attempt < max_retries - 1:
-                wait_time = (2 ** attempt) + 1
-                logger.info(f"⏳ Tunggu {wait_time} detik... (percobaan {attempt+2}/{max_retries})")
-                time.sleep(wait_time)
-        
-        return ''
-    
     def extract_numbers(self, text: str) -> str:
-        """Ekstrak 6 digit angka dari teks"""
+        """Ekstrak 6 digit angka dengan validasi lebih ketat"""
         if not text:
             return ''
         
-        # Bersihkan non-digit
-        digits = re.sub(r'[^0-9]', '', text)
+        # Jika text adalah HTML, parse dulu
+        if text.strip().startswith('<'):
+            return self._extract_numbers_from_html(text)
         
-        # Cari 6 digit berurutan
-        match = re.search(r'(\d{6})', digits)
-        if match:
-            return match.group(1)
+        # Cari semua kemungkinan angka 6 digit
+        candidates = re.findall(r'\b\d{6}\b', text)
         
-        # Ambil 6 digit pertama
-        if len(digits) >= 6:
-            return digits[:6]
+        if candidates:
+            # Prioritaskan angka yang muncul di konteks tertentu
+            for angka in candidates:
+                pos = text.find(angka)
+                if pos > 0:
+                    context = text[max(0, pos-50):pos+50].lower()
+                    keywords = ['kode', 'code', 'captcha', 'verify', 'hasil', 'result']
+                    if any(kw in context for kw in keywords):
+                        logger.info(f"✅ Angka {angka} ditemukan di konteks")
+                        return angka
+            
+            # Default ambil angka pertama
+            return candidates[0]
+        
+        # Kalau tidak ada yang exact 6 digit, cari pola lain
+        all_digits = re.findall(r'\d+', text)
+        for digits in all_digits:
+            if len(digits) >= 6:
+                return digits[:6]
         
         return ''
     
@@ -242,32 +251,20 @@ class VheerOCRScraper:
         logger.info(f"🔍 Memulai OCR Vheer untuk: {os.path.basename(image_path)}")
         
         # Upload dan dapatkan hasil
-        success, image_id, result_text = self._try_upload(image_path)
+        success, _, result_text = self._try_upload(image_path)
         
         if not success:
             logger.error("❌ Gagal upload gambar")
             return ''
         
-        # Kalau sudah dapat hasil langsung
-        if result_text:
-            logger.info(f"✅ Hasil mentah: {result_text[:100]}")
-            numbers = self.extract_numbers(result_text)
-            if numbers:
-                logger.info(f"✅ Angka ditemukan: {numbers}")
-                return numbers
+        # Ekstrak angka dengan validasi lebih baik
+        numbers = self.extract_numbers(result_text)
         
-        # Kalau dapat ID tapi belum dapat hasil
-        if image_id:
-            logger.info(f"🆔 Mendapatkan ID: {image_id}, mencoba ambil hasil...")
-            result_text = self._try_get_result(image_id)
-            
-            if result_text:
-                numbers = self.extract_numbers(result_text)
-                if numbers:
-                    logger.info(f"✅ Angka ditemukan: {numbers}")
-                    return numbers
+        if numbers:
+            logger.info(f"✅ Angka ditemukan: {numbers}")
+            return numbers
         
-        logger.error("❌ Gagal mendapatkan hasil OCR")
+        logger.error("❌ Tidak ada angka dalam response")
         return ''
 
 # Buat instance global scraper
@@ -665,11 +662,13 @@ async def message_handler(event):
 
         captcha_code = None
 
+        # Cek di teks dulu
         digits = re.findall(r'\d', text)
         if len(digits) >= 6:
             captcha_code = ''.join(digits[:6])
             logger.info(f"🔑 Kode dari teks: {captcha_code}")
 
+        # Kalau tidak ada di teks, coba OCR Vheer
         if not captcha_code and message.photo:
             for attempt in range(3):
                 try:
@@ -677,11 +676,15 @@ async def message_handler(event):
                     captcha_code = await read_number_from_photo_vheer(message)
                     if captcha_code:
                         logger.info(f"🔑 Kode dari Vheer OCR: {captcha_code}")
+                        # Jeda sebelum verify
+                        await asyncio.sleep(2)
                         break
                 except Exception as e:
                     logger.error(f"❌ Error: {e}")
+                
+                # Jeda lebih lama antar percobaan
                 if attempt < 2:
-                    await asyncio.sleep(3)
+                    await asyncio.sleep(5)
 
         if captcha_code and len(captcha_code) == 6:
             await client.send_message(BOT_A_USERNAME, f"/verify {captcha_code}")
