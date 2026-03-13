@@ -163,58 +163,55 @@ class VheerOCRScraper:
         return ''
     
     def _extract_image_id(self, html_text: str) -> str:
-        """Ekstrak image ID dari HTML response"""
-        if not html_text:
-            return ''
-        
-        # Metode 1: Cari pola JSON dengan id (dari screenshot: {"id":"5y99rippc", ...})
-        json_patterns = [
-            r'{"id":"([a-zA-Z0-9]+)"',
-            r'"id"\s*:\s*"([a-zA-Z0-9_-]+)"',
-            r'imageId["\s]*:["\s]*"([a-zA-Z0-9_-]+)"',
-            r'fileId["\s]*:["\s]*"([a-zA-Z0-9_-]+)"',
-        ]
-        
-        for pattern in json_patterns:
-            match = re.search(pattern, html_text)
-            if match:
-                image_id = match.group(1)
-                # Pastikan bukan "fileInput" atau ID palsu
-                if image_id and image_id != "fileInput" and len(image_id) > 2:
-                    logger.info(f"   ✅ Image ID ditemukan dari JSON: {image_id}")
-                    return image_id
-        
-        # Metode 2: Cari di data attribute
-        attr_patterns = [
-            r'data-id=["\']([a-zA-Z0-9_-]+)["\']',
-            r'data-image-id=["\']([a-zA-Z0-9_-]+)["\']',
-            r'data-result=["\']([a-zA-Z0-9_-]+)["\']',
-        ]
-        
-        for pattern in attr_patterns:
-            match = re.search(pattern, html_text)
-            if match:
-                image_id = match.group(1)
-                if image_id and image_id != "fileInput" and len(image_id) > 2:
-                    logger.info(f"   ✅ Image ID ditemukan dari data attribute: {image_id}")
-                    return image_id
-        
-        # Metode 3: Cari di URL
-        url_patterns = [
-            r'/result/([a-zA-Z0-9_-]+)',
-            r'/image-to-text/([a-zA-Z0-9_-]+)',
-            r'id=([a-zA-Z0-9_-]+)',
-        ]
-        
-        for pattern in url_patterns:
-            match = re.search(pattern, html_text)
-            if match:
-                image_id = match.group(1)
-                if image_id and image_id != "fileInput" and len(image_id) > 2:
-                    logger.info(f"   ✅ Image ID ditemukan dari URL: {image_id}")
-                    return image_id
-        
+    """Ekstrak image ID dari HTML response"""
+    if not html_text:
         return ''
+    
+    # PRIORITAS 1: Cari pola JSON dengan id (dari screenshot sebelumnya)
+    # Contoh: {"id":"5y99rippc","paragraphs":[{"text":"114933",...}]}
+    
+    # Cari pola JSON yang mengandung "id" dan "paragraphs"
+    json_match = re.search(r'{"id":"([a-zA-Z0-9]+)","paragraphs"', html_text)
+    if json_match:
+        image_id = json_match.group(1)
+        logger.info(f"   ✅ Image ID ditemukan dari JSON: {image_id}")
+        return image_id
+    
+    # PRIORITAS 2: Cari ID dengan format pendek (5-10 karakter)
+    short_id_patterns = [
+        r'"id"\s*:\s*"([a-zA-Z0-9]{5,10})"',
+        r'imageId["\s]*:["\s]*"([a-zA-Z0-9]{5,10})"',
+        r'data-id=["\']([a-zA-Z0-9]{5,10})["\']',
+    ]
+    
+    for pattern in short_id_patterns:
+        match = re.search(pattern, html_text)
+        if match:
+            image_id = match.group(1)
+            # Skip yang terlalu panjang (kayak page-xxx)
+            if len(image_id) < 15:
+                logger.info(f"   ✅ Image ID ditemukan: {image_id}")
+                return image_id
+    
+    # PRIORITAS 3: Cari di response JSON yang mungkin terenkapsulasi
+    # Kadang Next.js menyimpan data di tag <script>
+    soup = BeautifulSoup(html_text, 'html.parser')
+    scripts = soup.find_all('script')
+    for script in scripts:
+        if script.string:
+            # Cari data props
+            props_match = re.search(r'props":({.*?}),"page"', script.string)
+            if props_match:
+                props_json = props_match.group(1)
+                # Cari id di dalam props
+                id_match = re.search(r'"id":"([a-zA-Z0-9]+)"', props_json)
+                if id_match:
+                    image_id = id_match.group(1)
+                    if len(image_id) < 15:
+                        logger.info(f"   ✅ Image ID ditemukan di props: {image_id}")
+                        return image_id
+    
+    return ''
     
     def _poll_for_result(self, image_id: str, max_wait: int = 20) -> str:
         """Polling untuk mendapatkan hasil OCR"""
