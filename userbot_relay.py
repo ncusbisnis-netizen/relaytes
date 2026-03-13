@@ -27,7 +27,6 @@ SESSION_STRING = os.environ.get('SESSION_STRING', '')
 BOT_B_TOKEN = os.environ.get('BOT_B_TOKEN', '')
 BOT_A_USERNAME = 'bengkelmlbb_bot'
 REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
-# OCR_SPACE_API_KEY TIDAK DIGUNAKAN LAGI!
 STOK_ADMIN_URL = os.environ.get('STOK_ADMIN_URL', 'https://whatsapp.com/channel/0029VbA4PrD5fM5TMgECoE1E')
 
 # ==================== COUNTRY MAPPING (5 NEGARA) ====================
@@ -39,25 +38,12 @@ country_mapping = {
     'TH': '🇹🇭 Thailand',
 }
 
-# ==================== KONFIGURASI SCRAPING ====================
+# ==================== KONFIGURASI SCRAPING VHEER ====================
 VHEER_URL = "https://vheer.com/app/image-to-text"
-VHEER_API_URLS = [
-    "https://vheer.com/api/upload",
-    "https://vheer.com/api/image-to-text/upload",
-    "https://vheer.com/api/ocr/upload",
-]
-VHEER_RESULT_URLS = [
-    "https://vheer.com/api/result/{id}",
-    "https://vheer.com/api/image-to-text/result/{id}",
-    "https://vheer.com/api/ocr/result/{id}",
-]
-
-# Cache untuk OCR
-ocr_cache = {}
 
 # User Agent untuk scraping
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0',
     'Accept': 'application/json, text/plain, */*',
     'Accept-Language': 'id,en;q=0.9',
     'Origin': 'https://vheer.com',
@@ -88,11 +74,14 @@ downloaded_photos = []
 active_requests = {}
 captcha_timer_task = None
 
+# Cache untuk OCR
+ocr_cache = {}
+
 # Konstanta timeout
 REQUEST_TIMEOUT = 30
 CAPTCHA_TIMEOUT = 30
 
-# ==================== FUNGSI OCR BARU DENGAN SCRAPING VHEER ====================
+# ==================== CLASS OCR VHEER (TANPA API KEY) ====================
 
 class VheerOCRScraper:
     """Class untuk scraping OCR dari Vheer.com tanpa API key"""
@@ -101,7 +90,7 @@ class VheerOCRScraper:
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
         self.last_request_time = 0
-        self.min_delay = 2  # minimal jeda antar request (detik)
+        self.min_delay = 3  # minimal jeda antar request (detik)
         
     def _wait_for_rate_limit(self):
         """Jeda antar request untuk menghindari block"""
@@ -110,117 +99,109 @@ class VheerOCRScraper:
             time.sleep(self.min_delay - (now - self.last_request_time))
         self.last_request_time = time.time()
     
-    def _get_csrf_token(self) -> str:
-        """Ambil CSRF token dari halaman utama (jika ada)"""
-        try:
-            self._wait_for_rate_limit()
-            response = self.session.get(VHEER_URL, timeout=10)
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Cari meta tag csrf
-            meta = soup.find('meta', {'name': 'csrf-token'})
-            if meta:
-                return meta.get('content', '')
-            
-            # Cari input hidden dengan name _token
-            token_input = soup.find('input', {'name': '_token'})
-            if token_input:
-                return token_input.get('value', '')
-                
-        except Exception as e:
-            logger.debug(f"Gagal ambil CSRF token: {e}")
-        
-        return ''
-    
-    def _try_upload(self, image_path: str, csrf_token: str = '') -> tuple:
+    def _try_upload(self, image_path: str) -> tuple:
         """
-        Coba upload ke berbagai endpoint
-        Returns: (success, image_id, response_text)
+        Upload gambar ke Vheer.com
+        Returns: (success, image_id, result_text)
         """
         with open(image_path, 'rb') as f:
             files = {
-                'image': (os.path.basename(image_path), f, 'image/jpeg'),
                 'file': (os.path.basename(image_path), f, 'image/jpeg'),
             }
             
-            data = {}
-            if csrf_token:
-                data['_token'] = csrf_token
+            # ENDPOINT YANG BENAR (dari hasil analisis)
+            upload_url = VHEER_URL
             
-            # Coba berbagai endpoint upload
-            for upload_url in VHEER_API_URLS:
-                try:
-                    self._wait_for_rate_limit()
-                    logger.info(f"📤 Mencoba upload ke: {upload_url}")
+            try:
+                self._wait_for_rate_limit()
+                logger.info(f"📤 Mencoba upload ke: {upload_url}")
+                
+                resp = self.session.post(
+                    upload_url, 
+                    files=files,
+                    timeout=30
+                )
+                
+                logger.info(f"   Response status: {resp.status_code}")
+                
+                if resp.status_code == 200:
+                    logger.info(f"   ✅ Upload berhasil!")
                     
-                    # Coba dengan key 'image'
-                    resp = self.session.post(upload_url, files={'image': files['image']}, data=data, timeout=15)
-                    
-                    if resp.status_code not in [200, 201]:
-                        # Coba dengan key 'file'
-                        resp = self.session.post(upload_url, files={'file': files['file']}, data=data, timeout=15)
-                    
-                    if resp.status_code in [200, 201]:
-                        logger.info(f"✅ Upload berhasil ke {upload_url}")
+                    # Parse JSON response
+                    try:
+                        result = resp.json()
+                        logger.info(f"   📄 Response: {json.dumps(result)[:200]}")
                         
-                        # Parse response
-                        try:
-                            result = resp.json()
-                            # Cari ID di berbagai kemungkinan key
-                            image_id = (result.get('id') or 
-                                      result.get('file_id') or 
-                                      result.get('image_id') or 
-                                      result.get('data', {}).get('id'))
-                            
-                            if image_id:
-                                return True, str(image_id), resp.text
-                        except:
-                            # Mungkin response bukan JSON
-                            pass
-                            
-                except Exception as e:
-                    logger.debug(f"Gagal upload ke {upload_url}: {e}")
-                    continue
-        
-        return False, None, ''
+                        # Ambil ID dari response
+                        image_id = result.get('id')
+                        
+                        # Cari hasil OCR di paragraphs
+                        paragraphs = result.get('paragraphs', [])
+                        if paragraphs and len(paragraphs) > 0:
+                            text = paragraphs[0].get('text', '')
+                            if text:
+                                logger.info(f"   ✅ Hasil OCR langsung: {text}")
+                                return True, image_id, text
+                        
+                        # Kalau belum dapat hasil, return ID dulu
+                        if image_id:
+                            return True, image_id, ''
+                        
+                    except Exception as e:
+                        logger.error(f"❌ Gagal parse JSON: {e}")
+                        # Mungkin response plain text
+                        if resp.text:
+                            return True, None, resp.text
+                
+                return False, None, ''
+                        
+            except Exception as e:
+                logger.error(f"❌ Error upload: {e}")
+                return False, None, ''
     
     def _try_get_result(self, image_id: str, max_retries: int = 5) -> str:
         """
-        Ambil hasil OCR dengan berbagai endpoint
+        Ambil hasil OCR berdasarkan ID (kalau belum dapat di response pertama)
         """
+        # Format URL untuk ambil hasil
+        result_urls = [
+            f"https://vheer.com/api/result/{image_id}",
+            f"https://vheer.com/app/image-to-text/result/{image_id}",
+        ]
+        
         for attempt in range(max_retries):
-            for result_pattern in VHEER_RESULT_URLS:
+            for url in result_urls:
                 try:
-                    result_url = result_pattern.format(id=image_id)
                     self._wait_for_rate_limit()
+                    logger.info(f"📥 Mencoba ambil hasil dari: {url}")
                     
-                    logger.info(f"📥 Mencoba ambil hasil dari: {result_url}")
-                    resp = self.session.get(result_url, timeout=10)
+                    resp = self.session.get(url, timeout=15)
                     
                     if resp.status_code == 200:
-                        # Coba parse JSON
                         try:
                             data = resp.json()
+                            
                             # Cari teks di berbagai kemungkinan key
                             text = (data.get('text') or 
                                    data.get('result') or 
                                    data.get('data', {}).get('text') or
-                                   data.get('parsedText') or
-                                   data.get('ParsedText'))
+                                   data.get('paragraphs', [{}])[0].get('text'))
+                            
                             if text:
-                                return str(text)
+                                logger.info(f"   ✅ Hasil ditemukan: {text[:50]}")
+                                return text
                         except:
-                            # Mungkin response plain text
-                            if resp.text and len(resp.text) > 0:
+                            # Mungkin plain text
+                            if resp.text and not resp.text.startswith('<'):
                                 return resp.text
-                                
+                    
                 except Exception as e:
-                    logger.debug(f"Gagal ambil hasil dari {result_url}: {e}")
+                    logger.debug(f"Error ambil hasil: {e}")
             
-            # Tunggu sebelum retry
+            # Exponential backoff
             if attempt < max_retries - 1:
-                wait_time = 2 ** attempt  # exponential backoff: 1, 2, 4 detik
-                logger.info(f"⏳ Hasil belum siap, tunggu {wait_time} detik...")
+                wait_time = (2 ** attempt) + 1
+                logger.info(f"⏳ Tunggu {wait_time} detik... (percobaan {attempt+2}/{max_retries})")
                 time.sleep(wait_time)
         
         return ''
@@ -230,7 +211,7 @@ class VheerOCRScraper:
         if not text:
             return ''
         
-        # Hapus semua non-digit
+        # Bersihkan non-digit
         digits = re.sub(r'[^0-9]', '', text)
         
         # Cari 6 digit berurutan
@@ -238,7 +219,7 @@ class VheerOCRScraper:
         if match:
             return match.group(1)
         
-        # Kalau tidak ada 6 digit, ambil 6 digit pertama
+        # Ambil 6 digit pertama
         if len(digits) >= 6:
             return digits[:6]
         
@@ -254,45 +235,39 @@ class VheerOCRScraper:
         Returns:
             6 digit angka atau string kosong
         """
-        # Cek file exists
         if not os.path.exists(image_path):
             logger.error(f"❌ File tidak ditemukan: {image_path}")
             return ''
         
-        logger.info(f"🔍 Memulai OCR Vheer untuk: {image_path}")
+        logger.info(f"🔍 Memulai OCR Vheer untuk: {os.path.basename(image_path)}")
         
-        # 1. Dapatkan CSRF token
-        csrf_token = self._get_csrf_token()
-        if csrf_token:
-            logger.info(f"✅ CSRF token ditemukan")
+        # Upload dan dapatkan hasil
+        success, image_id, result_text = self._try_upload(image_path)
         
-        # 2. Upload gambar
-        success, image_id, _ = self._try_upload(image_path, csrf_token)
-        if not success or not image_id:
+        if not success:
             logger.error("❌ Gagal upload gambar")
             return ''
         
-        logger.info(f"✅ Image ID: {image_id}")
-        
-        # 3. Tunggu proses (kasih waktu)
-        time.sleep(3)
-        
-        # 4. Ambil hasil
-        result_text = self._try_get_result(image_id)
-        
+        # Kalau sudah dapat hasil langsung
         if result_text:
-            logger.info(f"✅ Hasil mentah: {result_text[:100]}...")
-            
-            # Ekstrak angka
+            logger.info(f"✅ Hasil mentah: {result_text[:100]}")
             numbers = self.extract_numbers(result_text)
             if numbers:
                 logger.info(f"✅ Angka ditemukan: {numbers}")
                 return numbers
-            else:
-                logger.warning(f"⚠️ Tidak ada angka dalam hasil: {result_text}")
-        else:
-            logger.error("❌ Gagal mendapatkan hasil OCR")
         
+        # Kalau dapat ID tapi belum dapat hasil
+        if image_id:
+            logger.info(f"🆔 Mendapatkan ID: {image_id}, mencoba ambil hasil...")
+            result_text = self._try_get_result(image_id)
+            
+            if result_text:
+                numbers = self.extract_numbers(result_text)
+                if numbers:
+                    logger.info(f"✅ Angka ditemukan: {numbers}")
+                    return numbers
+        
+        logger.error("❌ Gagal mendapatkan hasil OCR")
         return ''
 
 # Buat instance global scraper
@@ -329,24 +304,19 @@ async def read_number_from_photo_vheer(message):
 # ==================== FUNGSI BANTUAN ====================
 def clean_bind_text(text):
     """Bersihkan text bind info"""
-    # 1. Handle (Private) dan variasinya
     text = re.sub(r'\(Private\)', 'Hide information', text)
     text = re.sub(r'Bind \(Private\)', 'Hide information', text)
     text = re.sub(r'Private', 'Hide information', text)
     
-    # 2. Handle Moonton Unverified (khusus Moonton)
     if 'Moonton Unverified' in text:
         parts = text.split('Moonton :', 1)
         if len(parts) > 1:
             text = f"{parts[0]}Moonton : empty."
     
-    # 3. Handle (Unverified) untuk yang lain
     text = re.sub(r'\(Unverified\)', 'Failed Verification', text)
     text = re.sub(r'Unverified', 'Failed Verification', text)
     
-    # Bersihkan spasi berlebih
     text = re.sub(r'\s+', ' ', text).strip()
-    
     return text
 
 def validate_mlbb_gopay_sync(user_id, server_id):
@@ -410,11 +380,9 @@ def cleanup_downloaded_photos():
             pass
 
 def format_final_output(original_text, nickname, region, uid, sid, android, ios):
-    """Format output final dengan penanganan Moonton empty yang benar"""
-    
+    """Format output final"""
     keywords = ['Moonton', 'VK', 'Google Play', 'Tiktok', 'Facebook', 'Apple', 'GCID', 'Telegram', 'WhatsApp']
     
-    # Kelompokkan baris berdasarkan keyword utama (diawali ✧)
     lines = original_text.split('\n')
     groups = {}
     current_keyword = None
@@ -429,7 +397,6 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios)
             if current_keyword:
                 groups[current_keyword] = current_lines
             
-            # Ambil nama keyword (sebelum ':')
             if ':' in stripped:
                 parts = stripped[1:].strip().split(':', 1)
                 keyword_raw = parts[0].strip()
@@ -451,47 +418,35 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios)
             lines_group = groups[kw]
             
             if kw == "Moonton":
-                # Cari sub-baris yang diawali '-'
                 sub_lines = [l for l in lines_group if l.startswith('-')]
                 
                 if sub_lines:
-                    # Ada beberapa akun Moonton, tampilkan masing-masing
                     for sub in sub_lines:
                         sub_clean = sub.lstrip('-').strip()
                         if ':' in sub_clean:
                             label, value = sub_clean.split(':', 1)
                             label = label.strip()
                             value = value.strip()
-                            # Bersihkan value
                             value = clean_bind_text(value)
                             bind_info.append(f"• {label}: {value}")
                         else:
                             bind_info.append(f"• {sub_clean}")
                 else:
-                    # Hanya satu baris Moonton
                     main_line = lines_group[0]
-                    # Hapus '✧' dan bersihkan
                     if main_line.startswith('✧'):
                         main_line = main_line[1:].strip()
                     
-                    # Cek apakah ini baris empty
                     if 'empty' in main_line.lower():
-                        # Format dengan benar - pastikan tidak double dot
                         if ':' in main_line:
                             parts = main_line.split(':', 1)
                             label = parts[0].strip()
-                            # Pastikan label hanya "Moonton" sekali
                             if label.count('Moonton') > 1:
                                 label = 'Moonton'
-                            # Gunakan "empty." tanpa tambahan titik
                             bind_info.append(f"• {label}: empty.")
                         else:
                             bind_info.append(f"• Moonton: empty.")
                     else:
-                        # Tidak empty, proses normal
                         main_line = clean_bind_text(main_line)
-                        
-                        # Pastikan formatnya "Moonton: value"
                         if ':' in main_line:
                             label, value = main_line.split(':', 1)
                             label = label.strip()
@@ -500,14 +455,10 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios)
                         else:
                             bind_info.append(f"• Moonton: {main_line}")
             else:
-                # Keyword lain: ambil baris utama saja
                 main_line = lines_group[0]
                 if main_line.startswith('✧'):
                     main_line = main_line[1:].strip()
-                
                 main_line = clean_bind_text(main_line)
-                
-                # Pastikan formatnya "Keyword: value"
                 if ':' in main_line:
                     label, value = main_line.split(':', 1)
                     label = label.strip()
@@ -516,7 +467,6 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios)
                 else:
                     bind_info.append(f"• {kw}: {main_line}")
         else:
-            # Keyword tidak ditemukan
             bind_info.append(f"• {kw}: empty.")
     
     final = f"""INFORMATION ACCOUNT:
@@ -538,7 +488,7 @@ Device Login: Android {android} | iOS {ios}"""
 
 # ==================== FUNGSI KOMUNIKASI DENGAN BOT B ====================
 async def send_status_to_user(chat_id, text, reply_to_message_id=None, reply_markup=None):
-    """Kirim pesan status ke user melalui Bot B (bisa sebagai reply)"""
+    """Kirim pesan status ke user melalui Bot B"""
     url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
     data = {
         'chat_id': chat_id,
@@ -549,20 +499,20 @@ async def send_status_to_user(chat_id, text, reply_to_message_id=None, reply_mar
     if reply_markup:
         data['reply_markup'] = json.dumps(reply_markup)
     try:
-        logger.info(f"📤 Mengirim status ke user {chat_id}" + (f" (reply ke {reply_to_message_id})" if reply_to_message_id else ""))
+        logger.info(f"📤 Mengirim status ke user {chat_id}")
         response = requests.post(url, json=data, timeout=10)
         if response.status_code == 200:
             msg_id = response.json()['result']['message_id']
             logger.info(f"✅ Status terkirim, message_id: {msg_id}")
             return msg_id
         else:
-            logger.error(f"❌ Gagal kirim status: {response.status_code} - {response.text}")
+            logger.error(f"❌ Gagal kirim status: {response.status_code}")
     except Exception as e:
         logger.error(f"❌ Exception kirim status: {e}")
     return None
 
 async def edit_status_message(chat_id, message_id, text, reply_markup=None):
-    """Edit pesan yang sudah dikirim ke user melalui Bot B"""
+    """Edit pesan yang sudah dikirim ke user"""
     url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/editMessageText"
     data = {
         'chat_id': chat_id,
@@ -572,18 +522,17 @@ async def edit_status_message(chat_id, message_id, text, reply_markup=None):
     if reply_markup:
         data['reply_markup'] = json.dumps(reply_markup)
     try:
-        logger.info(f"✏️ Mengedit pesan {message_id} untuk user {chat_id}")
+        logger.info(f"✏️ Mengedit pesan {message_id}")
         response = requests.post(url, json=data, timeout=10)
         if response.status_code == 200:
-            logger.info(f"✅ Pesan {message_id} berhasil diedit")
+            logger.info(f"✅ Pesan {message_id} diedit")
         else:
-            logger.error(f"❌ Gagal edit pesan {message_id}: {response.status_code} - {response.text}")
+            logger.error(f"❌ Gagal edit: {response.status_code}")
     except Exception as e:
-        logger.error(f"❌ Exception saat edit pesan: {e}")
+        logger.error(f"❌ Exception edit: {e}")
 
 # ==================== TIMEOUT CHECKER ====================
 async def timeout_checker():
-    """Loop untuk memonitor request yang melebihi batas waktu"""
     while True:
         if bot_status['in_captcha']:
             await asyncio.sleep(1)
@@ -599,21 +548,17 @@ async def timeout_checker():
                     req_data['message_id'],
                     "Request timeout. Silakan coba lagi."
                 )
-                # Hapus dari Redis
                 try:
                     head = r.lindex('pending_requests', 0)
                     if head and head.decode('utf-8') == req_id:
                         r.lpop('pending_requests')
                     r.delete(req_id)
-                    logger.info(f"🗑️ Request {req_id} dihapus dari Redis karena timeout")
                 except Exception as e:
-                    logger.error(f"❌ Gagal hapus Redis saat timeout: {e}")
-                # Hapus dari waiting flag
+                    logger.error(f"❌ Gagal hapus Redis: {e}")
                 waiting_for_result.pop(req_data['chat_id'], None)
                 to_remove.append(req_id)
         for req_id in to_remove:
             active_requests.pop(req_id, None)
-            logger.info(f"🗑️ Request {req_id} dihapus dari active_requests karena timeout")
         await asyncio.sleep(1)
 
 # ==================== HANDLER PESAN DARI BOT A ====================
@@ -626,25 +571,22 @@ async def message_handler(event):
     sender_id = event.sender_id
     text = message.text or message.message or ''
 
-    # Hanya pesan dari Bot A yang diproses
     if chat_id != 7240340418 and sender_id != 7240340418:
         return
 
     logger.info(f"📩 Dari Bot A: {text[:100]}")
 
-    # ========== 1. HASIL INFO (format dengan garis) ==========
+    # HASIL INFO
     if text.startswith('──────────────────────') and 'BIND ACCOUNT INFO' in text:
-        logger.info("✅ Mendapatkan hasil info dari Bot A")
+        logger.info("✅ Mendapatkan hasil info")
         
         if not active_requests:
-            logger.warning("❌ Tidak ada request aktif, hasil diabaikan")
             return
 
         req_id, req_info = next(iter(active_requests.items()))
         user_id = req_info['chat_id']
         message_id = req_info['message_id']
 
-        # Ekstrak data
         id_match = re.search(r'ID:?\s*(\d+)', text)
         server_match = re.search(r'Server:?\s*(\d+)', text)
         android_match = re.search(r'Android:?\s*(\d+)', text)
@@ -655,7 +597,6 @@ async def message_handler(event):
         android = android_match.group(1) if android_match else '0'
         ios = ios_match.group(1) if ios_match else '0'
 
-        # Validasi via GoPay
         gopay = validate_mlbb_gopay_sync(uid, sid)
         if gopay['status']:
             nickname = gopay['username']
@@ -664,34 +605,29 @@ async def message_handler(event):
             nickname = 'Tidak diketahui'
             region = '🌍 Tidak diketahui'
 
-        # Format output
         output, markup = format_final_output(text, nickname, region, uid, sid, android, ios)
-
-        # Edit pesan status dengan hasil
         await edit_status_message(user_id, message_id, output, markup)
 
-        # Bersihkan data dari memori
         try:
             del active_requests[req_id]
             waiting_for_result.pop(user_id, None)
-        except Exception as e:
-            logger.error(f"❌ Gagal hapus active_requests: {e}")
+        except:
+            pass
 
-        # Hapus dari Redis
         try:
             head = r.lindex('pending_requests', 0)
             if head and head.decode('utf-8') == req_id:
                 r.lpop('pending_requests')
             r.delete(req_id)
-        except Exception as e:
-            logger.error(f"❌ Gagal hapus Redis: {e}")
+        except:
+            pass
 
         cleanup_downloaded_photos()
         return
 
-    # ========== 2. VERIFIKASI SUKSES ==========
+    # VERIFIKASI SUKSES
     if 'verification successful' in text.lower() or '✅ Verifikasi berhasil!' in text:
-        logger.info("✅ Verifikasi sukses, auto-retry dalam 5 detik")
+        logger.info("✅ Verifikasi sukses")
 
         if captcha_timer_task:
             captcha_timer_task.cancel()
@@ -707,16 +643,13 @@ async def message_handler(event):
             req_info['start_time'] = time.time()
         return
 
-    # ========== 3. CAPTCHA ==========
-    if (message.photo or 
-        'captcha' in text.lower() or 
-        re.search(r'\d{6}', text) or 
-        '🔒 Masukkan kode captcha' in text):
+    # CAPTCHA
+    if (message.photo or 'captcha' in text.lower() or 
+        re.search(r'\d{6}', text) or '🔒 Masukkan kode captcha' in text):
         
         logger.warning("🚫 CAPTCHA terdeteksi!")
         bot_status['in_captcha'] = True
 
-        # Reset timeout untuk request yang sedang aktif
         if active_requests:
             for req_id, req_info in active_requests.items():
                 req_info['start_time'] = time.time()
@@ -730,38 +663,31 @@ async def message_handler(event):
             logger.info("Captcha timeout, status direset")
         captcha_timer_task = asyncio.create_task(reset_captcha())
 
-        # Ambil kode captcha
         captcha_code = None
 
-        # Cek di teks terlebih dahulu
         digits = re.findall(r'\d', text)
         if len(digits) >= 6:
             captcha_code = ''.join(digits[:6])
-            logger.info(f"🔑 Kode captcha dari teks: {captcha_code}")
+            logger.info(f"🔑 Kode dari teks: {captcha_code}")
 
-        # Jika tidak ada di teks dan ada foto, coba OCR Vheer (TANPA API KEY!)
         if not captcha_code and message.photo:
-            for attempt in range(3):  # Coba maksimal 3 kali
+            for attempt in range(3):
                 try:
                     logger.info(f"📸 Percobaan Vheer OCR ke-{attempt+1}")
                     captcha_code = await read_number_from_photo_vheer(message)
                     if captcha_code:
-                        logger.info(f"🔑 Kode captcha dari Vheer OCR (percobaan {attempt+1}): {captcha_code}")
+                        logger.info(f"🔑 Kode dari Vheer OCR: {captcha_code}")
                         break
-                    else:
-                        logger.warning(f"Vheer OCR percobaan {attempt+1} gagal")
                 except Exception as e:
-                    logger.error(f"❌ Vheer OCR percobaan {attempt+1} error: {e}")
-                
-                if attempt < 2:  # Jeda sebelum retry
+                    logger.error(f"❌ Error: {e}")
+                if attempt < 2:
                     await asyncio.sleep(3)
 
         if captcha_code and len(captcha_code) == 6:
-            # Kirim verify ke Bot A
             await client.send_message(BOT_A_USERNAME, f"/verify {captcha_code}")
             logger.info("📤 Perintah verify dikirim")
         else:
-            logger.error("❌ Gagal mendapatkan kode captcha setelah 3 percobaan Vheer OCR")
+            logger.error("❌ Gagal mendapatkan kode captcha")
             cleanup_downloaded_photos()
 
             if active_requests:
@@ -771,15 +697,13 @@ async def message_handler(event):
                     req_info['message_id'],
                     "Gagal memproses request. Coba lagi."
                 )
-                # Hapus dari Redis
                 try:
                     head = r.lindex('pending_requests', 0)
                     if head and head.decode('utf-8') == req_id:
                         r.lpop('pending_requests')
                     r.delete(req_id)
-                except Exception as e:
-                    logger.error(f"❌ Gagal hapus Redis: {e}")
-                
+                except:
+                    pass
                 waiting_for_result.pop(req_info['chat_id'], None)
                 del active_requests[req_id]
 
@@ -805,7 +729,6 @@ async def process_queue():
 
                     req_json = r.get(req_id)
                     if not req_json:
-                        logger.warning(f"⚠️ Request {req_id} tidak ditemukan di Redis")
                         r.lpop('pending_requests')
                         continue
 
@@ -814,16 +737,17 @@ async def process_queue():
                     reply_to_message_id = req_data.get('reply_to_message_id')
 
                     if waiting_for_result.get(user_id, False):
-                        logger.info(f"⏳ User {user_id} masih menunggu, pindahkan ke belakang")
                         r.lpop('pending_requests')
                         r.rpush('pending_requests', req_id)
                         await asyncio.sleep(5)
                         continue
 
-                    status_text = "Proses request..."
-                    msg_id = await send_status_to_user(user_id, status_text, reply_to_message_id=reply_to_message_id)
+                    msg_id = await send_status_to_user(
+                        user_id, 
+                        "Proses request...", 
+                        reply_to_message_id=reply_to_message_id
+                    )
                     if not msg_id:
-                        logger.error(f"❌ Gagal mengirim status ke user {user_id}")
                         r.lpop('pending_requests')
                         r.delete(req_id)
                         continue
@@ -852,7 +776,7 @@ async def process_queue():
 async def main():
     logger.info("🚀 Memulai userbot dengan Vheer OCR (TANPA API KEY!)...")
 
-    # Bersihkan queue lama di Redis
+    # Bersihkan queue lama
     try:
         queue_len = r.llen('pending_requests')
         if queue_len > 0:
