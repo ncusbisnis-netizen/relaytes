@@ -91,7 +91,7 @@ class VheerOCRScraper:
         self.session.headers.update(HEADERS)
         self.last_request_time = 0
         self.min_delay = 3
-        self.upload_count = 0  # Counter untuk tracking
+        self.upload_count = 0
         
     def _wait_for_rate_limit(self):
         """Jeda antar request untuk menghindari block"""
@@ -101,7 +101,7 @@ class VheerOCRScraper:
         self.last_request_time = time.time()
     
     def _extract_numbers_from_html(self, html_text: str) -> str:
-        """Ekstrak 6 digit angka dari HTML dengan berbagai metode"""
+        """Ekstrak 6 digit angka dari HTML"""
         if not html_text:
             return ''
         
@@ -151,59 +151,127 @@ class VheerOCRScraper:
             logger.info(f"   ✅ Angka ditemukan di teks: {candidates[0]}")
             return candidates[0]
         
-        # Metode 3: Cari pola 6 digit beruntun (tanpa word boundary)
+        # Metode 3: Cari pola 6 digit beruntun
         all_digits = re.findall(r'\d{6,}', all_text)
         if all_digits:
             longest = max(all_digits, key=len)
             angka = longest[:6]
-            # Cek apakah angka masuk akal
             if not all(x == angka[0] for x in angka):
                 logger.info(f"   ✅ Angka 6 digit dari string panjang: {angka}")
                 return angka
         
         return ''
     
-    def _try_get_result_page(self, image_id: str = None) -> str:
-        """Coba ambil halaman hasil (kalau ada)"""
-        try:
-            # Tunggu sebentar biar proses
-            time.sleep(3)
-            
-            # Coba beberapa kemungkinan URL hasil
-            result_urls = [
-                VHEER_URL,  # Halaman utama
-                f"{VHEER_URL}/result",
-                "https://vheer.com/api/latest-result",
-            ]
-            
-            if image_id:
-                result_urls.insert(0, f"{VHEER_URL}/result/{image_id}")
-                result_urls.insert(1, f"https://vheer.com/api/result/{image_id}")
-            
-            for url in result_urls:
+    def _extract_image_id(self, html_text: str) -> str:
+        """Ekstrak image ID dari HTML response"""
+        if not html_text:
+            return ''
+        
+        # Metode 1: Cari pola JSON dengan id (dari screenshot: {"id":"5y99rippc", ...})
+        json_patterns = [
+            r'{"id":"([a-zA-Z0-9]+)"',
+            r'"id"\s*:\s*"([a-zA-Z0-9_-]+)"',
+            r'imageId["\s]*:["\s]*"([a-zA-Z0-9_-]+)"',
+            r'fileId["\s]*:["\s]*"([a-zA-Z0-9_-]+)"',
+        ]
+        
+        for pattern in json_patterns:
+            match = re.search(pattern, html_text)
+            if match:
+                image_id = match.group(1)
+                # Pastikan bukan "fileInput" atau ID palsu
+                if image_id and image_id != "fileInput" and len(image_id) > 2:
+                    logger.info(f"   ✅ Image ID ditemukan dari JSON: {image_id}")
+                    return image_id
+        
+        # Metode 2: Cari di data attribute
+        attr_patterns = [
+            r'data-id=["\']([a-zA-Z0-9_-]+)["\']',
+            r'data-image-id=["\']([a-zA-Z0-9_-]+)["\']',
+            r'data-result=["\']([a-zA-Z0-9_-]+)["\']',
+        ]
+        
+        for pattern in attr_patterns:
+            match = re.search(pattern, html_text)
+            if match:
+                image_id = match.group(1)
+                if image_id and image_id != "fileInput" and len(image_id) > 2:
+                    logger.info(f"   ✅ Image ID ditemukan dari data attribute: {image_id}")
+                    return image_id
+        
+        # Metode 3: Cari di URL
+        url_patterns = [
+            r'/result/([a-zA-Z0-9_-]+)',
+            r'/image-to-text/([a-zA-Z0-9_-]+)',
+            r'id=([a-zA-Z0-9_-]+)',
+        ]
+        
+        for pattern in url_patterns:
+            match = re.search(pattern, html_text)
+            if match:
+                image_id = match.group(1)
+                if image_id and image_id != "fileInput" and len(image_id) > 2:
+                    logger.info(f"   ✅ Image ID ditemukan dari URL: {image_id}")
+                    return image_id
+        
+        return ''
+    
+    def _poll_for_result(self, image_id: str, max_wait: int = 20) -> str:
+        """Polling untuk mendapatkan hasil OCR"""
+        
+        # Endpoint yang mungkin
+        result_endpoints = [
+            f"https://vheer.com/api/result/{image_id}",
+            f"https://vheer.com/api/image-to-text/result/{image_id}",
+            f"https://vheer.com/api/ocr/result/{image_id}",
+            f"https://vheer.com/api/get-result/{image_id}",
+            f"https://vheer.com/result/{image_id}",
+        ]
+        
+        start_time = time.time()
+        while time.time() - start_time < max_wait:
+            for endpoint in result_endpoints:
                 try:
                     self._wait_for_rate_limit()
-                    logger.info(f"📥 Mencoba ambil hasil dari: {url}")
+                    logger.info(f"📥 Polling hasil dari: {endpoint}")
                     
-                    resp = self.session.get(url, timeout=15)
+                    resp = self.session.get(endpoint, timeout=10)
+                    
                     if resp.status_code == 200:
-                        angka = self._extract_numbers_from_html(resp.text)
-                        if angka:
-                            logger.info(f"   ✅ Angka ditemukan di halaman hasil: {angka}")
-                            return angka
+                        # Coba parse JSON
+                        try:
+                            data = resp.json()
+                            # Cari teks di berbagai kemungkinan key
+                            text = (data.get('text') or 
+                                   data.get('result') or 
+                                   data.get('data', {}).get('text') or
+                                   data.get('paragraphs', [{}])[0].get('text') or
+                                   data.get('ocr_text') or
+                                   data.get('extracted_text'))
+                            
+                            if text:
+                                logger.info(f"   ✅ Hasil ditemukan dari API: {text[:30]}")
+                                return text
+                        except:
+                            # Mungkin plain text
+                            if resp.text and len(resp.text) > 0 and not resp.text.startswith('<'):
+                                logger.info(f"   ✅ Hasil plain text: {resp.text[:30]}")
+                                return resp.text
+                            
                 except Exception as e:
-                    logger.debug(f"Error ambil hasil dari {url}: {e}")
-                    continue
-                        
-        except Exception as e:
-            logger.debug(f"Error ambil hasil: {e}")
+                    logger.debug(f"Error polling {endpoint}: {e}")
+            
+            # Tunggu sebelum polling lagi
+            logger.info(f"   ⏳ Hasil belum siap, tunggu 2 detik...")
+            time.sleep(2)
         
+        logger.warning(f"   ⚠️ Timeout polling setelah {max_wait} detik")
         return ''
     
     def _try_upload(self, image_path: str) -> tuple:
         """
         Upload gambar ke Vheer.com
-        Returns: (success, image_id, result_text)
+        Returns: (success, result_text)
         """
         with open(image_path, 'rb') as f:
             files = {
@@ -229,44 +297,40 @@ class VheerOCRScraper:
                 if resp.status_code == 200:
                     logger.info(f"   ✅ Upload berhasil!")
                     
-                    # Ekstrak angka dari response pertama
+                    # Cek apakah langsung ada angka di response
                     angka = self._extract_numbers_from_html(resp.text)
-                    
                     if angka:
                         logger.info(f"   ✅ Angka langsung ditemukan: {angka}")
-                        return True, None, angka
+                        return True, angka
                     
-                    # Kalau belum dapat, coba ambil image_id dari response
+                    # Kalau belum dapat, cari image_id
                     logger.info("   ⏳ Angka belum muncul, mencari image_id...")
+                    image_id = self._extract_image_id(resp.text)
                     
-                    # Cari image_id di response (format JSON dalam HTML)
-                    match = re.search(r'"id"\s*:\s*"([a-zA-Z0-9]+)"', resp.text)
-                    if not match:
-                        match = re.search(r'id[":= ]+["\']?([a-zA-Z0-9]{5,20})["\']?', resp.text)
-                    
-                    image_id = match.group(1) if match else None
                     if image_id:
                         logger.info(f"   🔑 Image ID ditemukan: {image_id}")
-                    
-                    # Ambil hasil dari halaman result
-                    logger.info("   ⏳ Mencoba ambil dari halaman hasil...")
-                    angka = self._try_get_result_page(image_id)
-                    
-                    if angka:
-                        return True, image_id, angka
+                        
+                        # Polling untuk hasil
+                        logger.info(f"   ⏳ Polling hasil untuk ID: {image_id}")
+                        result = self._poll_for_result(image_id)
+                        
+                        if result:
+                            return True, result
+                    else:
+                        logger.warning("   ⚠️ Tidak menemukan image ID")
                     
                     # Kalau masih belum dapat, return HTML mentah
                     logger.warning("   ⚠️ Tidak menemukan angka, return HTML mentah")
-                    return True, image_id, resp.text
+                    return True, resp.text
                 
-                return False, None, ''
+                return False, ''
                         
             except requests.exceptions.Timeout:
                 logger.error("❌ Timeout upload")
-                return False, None, ''
+                return False, ''
             except Exception as e:
                 logger.error(f"❌ Error upload: {e}")
-                return False, None, ''
+                return False, ''
     
     def extract_numbers(self, text: str) -> str:
         """Ekstrak 6 digit angka dengan validasi lebih ketat"""
@@ -327,7 +391,7 @@ class VheerOCRScraper:
         for attempt in range(max_attempts):
             logger.info(f"📦 Percobaan OCR ke-{attempt+1}/{max_attempts}")
             
-            success, _, result_text = self._try_upload(image_path)
+            success, result_text = self._try_upload(image_path)
             
             if not success:
                 if attempt < max_attempts - 1:
