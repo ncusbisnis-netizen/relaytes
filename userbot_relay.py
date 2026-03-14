@@ -60,21 +60,34 @@ downloaded_photos = []
 active_requests = {}
 captcha_timer_task = None
 
+# Cache untuk OCR
+ocr_cache = {}
+
 # Konstanta timeout
 REQUEST_TIMEOUT = 30
 CAPTCHA_TIMEOUT = 30
 
-# ==================== VHEER OCR DENGAN HTML + POLLING ====================
+# ==================== VHEER OCR DENGAN HEADER LENGKAP ====================
 
 class VheerOCR:
-    """OCR Vheer dengan metode HTML + polling"""
+    """OCR Vheer dengan header lengkap seperti browser"""
     
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'id,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
             'Origin': 'https://vheer.com',
+            'Connection': 'keep-alive',
             'Referer': 'https://vheer.com/app/image-to-text',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'same-origin',
+            'Pragma': 'no-cache',
+            'Cache-Control': 'no-cache',
+            'TE': 'trailers',
         })
         self.last_request = 0
         self.min_delay = 2
@@ -86,37 +99,61 @@ class VheerOCR:
             time.sleep(self.min_delay - (now - self.last_request))
         self.last_request = time.time()
     
-    def _extract_angka(self, text: str) -> str:
-        """Ekstrak 6 digit angka dari teks"""
+    def _extract_angka_from_json(self, data: dict) -> str:
+        """Ekstrak angka 6 digit dari response JSON"""
+        try:
+            # Cek struktur dari screenshot: {"id":"...","paragraphs":[{"text":"114933",...}]}
+            if 'paragraphs' in data:
+                paragraphs = data['paragraphs']
+                if paragraphs and isinstance(paragraphs, list) and len(paragraphs) > 0:
+                    text = paragraphs[0].get('text', '')
+                    if text:
+                        # Langsung return karena dari screenshot sudah pasti 6 digit
+                        return text
+            
+            # Struktur alternatif
+            if 'text' in data:
+                return data['text']
+            if 'result' in data:
+                return data['result']
+            if 'data' in data and isinstance(data['data'], dict):
+                return data['data'].get('text', '')
+                
+        except Exception as e:
+            logger.debug(f"Gagal parse JSON: {e}")
+        return ''
+    
+    def _extract_angka_from_html(self, text: str) -> str:
+        """Ekstrak 6 digit angka dari HTML (fallback)"""
         if not text:
             return ''
         
+        soup = BeautifulSoup(text, 'html.parser')
+        all_text = soup.get_text()
+        
         # Cari semua angka 6 digit
-        candidates = re.findall(r'\b\d{6}\b', text)
+        candidates = re.findall(r'\b\d{6}\b', all_text)
         
         # Daftar angka palsu
         fake = ['000000', '111111', '222222', '333333', '444444',
                 '555555', '666666', '777777', '888888', '999999', '123456']
         
-        # Prioritaskan angka yang bukan palsu
         for angka in candidates:
             if angka not in fake:
                 return angka
-        
-        # Kalau semua palsu, ambil yang pertama
         return candidates[0] if candidates else ''
     
     def ocr_image(self, image_path: str) -> str:
         """
-        Upload gambar ke Vheer.com dan ambil hasil OCR dengan polling
+        Upload gambar ke Vheer.com dan ambil hasil OCR
         """
         try:
-            # STEP 1: Upload gambar (PASTI BERHASIL)
+            # STEP 1: Upload gambar dengan header lengkap
             with open(image_path, 'rb') as f:
                 files = {'file': (os.path.basename(image_path), f, 'image/jpeg')}
                 
                 self._wait()
-                logger.info("📤 Upload ke Vheer...")
+                logger.info("📤 Upload ke Vheer dengan header browser...")
                 
                 resp = self.session.post(
                     "https://vheer.com/app/image-to-text",
@@ -124,42 +161,55 @@ class VheerOCR:
                     timeout=30
                 )
                 
+                logger.info(f"📥 Response status: {resp.status_code}")
+                logger.info(f"📥 Content-Type: {resp.headers.get('Content-Type')}")
+                
                 if resp.status_code != 200:
                     logger.error(f"❌ Upload gagal: {resp.status_code}")
                     return ''
                 
-                logger.info("✅ Upload OK")
-            
-            # STEP 2: Polling untuk hasil (coba 4 kali dengan jeda 5 detik)
-            for attempt in range(4):
-                logger.info(f"⏳ Polling percobaan {attempt+1}/4...")
-                time.sleep(5)  # Tunggu 5 detik setiap polling
-                
-                self._wait()
-                resp = self.session.get("https://vheer.com/app/image-to-text", timeout=30)
-                
-                if resp.status_code == 200:
-                    # Parse HTML dan cari angka
-                    soup = BeautifulSoup(resp.text, 'html.parser')
-                    all_text = soup.get_text()
+                # STEP 2: Coba parse sebagai JSON (langsung dapat hasil?)
+                try:
+                    data = resp.json()
+                    logger.info("✅ Response JSON ditemukan!")
                     
-                    angka = self._extract_angka(all_text)
+                    # Ambil angka dari JSON
+                    angka = self._extract_angka_from_json(data)
                     if angka:
-                        logger.info(f"✅ ANGKA DITEMUKAN: {angka}")
+                        logger.info(f"✅ ANGKA DARI JSON: {angka}")
                         return angka
+                    else:
+                        logger.warning("⚠️ JSON tidak mengandung angka")
+                        
+                except requests.exceptions.JSONDecodeError:
+                    logger.info("📄 Response berupa HTML, coba polling...")
                     
-                    # Coba cari di elemen tertentu
-                    for selector in ['div.result', 'div.output', 'pre', 'code']:
-                        for elem in soup.select(selector):
-                            text = elem.get_text(strip=True)
-                            angka = self._extract_angka(text)
-                            if angka:
-                                logger.info(f"✅ Angka di {selector}: {angka}")
-                                return angka
-            
-            logger.warning("⚠️ Gagal mendapatkan angka setelah 4x polling")
-            return ''
-            
+                    # STEP 3: Kalau HTML, polling beberapa kali
+                    for attempt in range(4):
+                        logger.info(f"⏳ Polling percobaan {attempt+1}/4...")
+                        time.sleep(5)
+                        
+                        self._wait()
+                        poll_resp = self.session.get("https://vheer.com/app/image-to-text", timeout=30)
+                        
+                        if poll_resp.status_code == 200:
+                            # Coba parse JSON dulu (mungkin berubah jadi JSON)
+                            try:
+                                data = poll_resp.json()
+                                angka = self._extract_angka_from_json(data)
+                                if angka:
+                                    logger.info(f"✅ ANGKA DARI JSON POLLING: {angka}")
+                                    return angka
+                            except:
+                                # Kalau bukan JSON, cari di HTML
+                                angka = self._extract_angka_from_html(poll_resp.text)
+                                if angka:
+                                    logger.info(f"✅ ANGKA DARI HTML POLLING: {angka}")
+                                    return angka
+                
+                logger.warning("⚠️ Gagal mendapatkan angka setelah semua percobaan")
+                return ''
+                
         except Exception as e:
             logger.error(f"❌ Error Vheer OCR: {e}")
             return ''
@@ -486,9 +536,9 @@ async def message_handler(event):
             kode = ''.join(digits[:6])
             logger.info(f"🔑 Kode dari teks: {kode}")
         
-        # OCR Vheer dengan metode HTML + polling
+        # OCR Vheer dengan header lengkap
         if not kode and msg.photo:
-            logger.info("📸 Memulai OCR Vheer HTML + polling...")
+            logger.info("📸 Memulai OCR Vheer dengan header browser...")
             kode = await read_captcha(msg)
             if kode:
                 logger.info(f"✅ Kode dari Vheer: {kode}")
@@ -574,7 +624,7 @@ async def process_queue():
 
 # ==================== MAIN ====================
 async def main():
-    logger.info("🚀 Memulai userbot dengan Vheer OCR (HTML + polling)...")
+    logger.info("🚀 Memulai userbot dengan Vheer OCR (header browser)...")
     
     # Bersihkan queue lama
     try:
