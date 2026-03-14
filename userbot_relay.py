@@ -8,12 +8,8 @@ import re
 import logging
 import json
 import requests
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.firefox.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
+import base64
+from bs4 import BeautifulSoup
 
 # Setup logging
 logging.basicConfig(
@@ -64,149 +60,83 @@ downloaded_photos = []
 active_requests = {}
 captcha_timer_task = None
 
-# Konstanta timeout
 REQUEST_TIMEOUT = 30
 CAPTCHA_TIMEOUT = 30
 
-# ==================== CLASS OCR SELENIUM ====================
+# ==================== VHEER OCR SIMPLE ====================
 
-class VheerOCRSelenium:
-    """OCR Vheer menggunakan Selenium (browser sungguhan)"""
-    
-    def __init__(self):
-        self.options = Options()
-        self.options.add_argument('--headless')  # Jalan di background
-        self.options.add_argument('--no-sandbox')
-        self.options.add_argument('--disable-dev-shm-usage')
-        self.options.add_argument('--disable-gpu')
-        self.options.add_argument('--window-size=1920,1080')
-        # Buildpack akan otomatis set path Firefox
+VHEER_URL = "https://vheer.com/app/image-to-text"
+
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0',
+    'Origin': 'https://vheer.com',
+    'Referer': 'https://vheer.com/app/image-to-text',
+}
+
+def vheer_ocr(image_path: str) -> str:
+    """
+    Upload gambar ke Vheer.com, tunggu, lalu ambil hasil OCR
+    """
+    try:
+        # STEP 1: Upload gambar
+        with open(image_path, 'rb') as f:
+            files = {'file': (os.path.basename(image_path), f, 'image/jpeg')}
+            
+            logger.info("📤 Upload ke Vheer...")
+            resp = requests.post(VHEER_URL, files=files, headers=HEADERS, timeout=30)
+            
+            if resp.status_code != 200:
+                logger.error(f"❌ Upload gagal: {resp.status_code}")
+                return ''
+            
+            logger.info("✅ Upload OK")
         
-    def _extract_valid_angka(self, text: str) -> str:
-        """Ekstrak angka 6 digit yang valid dari teks"""
-        if not text:
+        # STEP 2: TUNGGU 7 DETIK biar server proses OCR
+        logger.info("⏳ Tunggu 7 detik untuk proses OCR...")
+        time.sleep(7)
+        
+        # STEP 3: Ambil halaman hasil (GET)
+        logger.info("📥 Ambil halaman hasil...")
+        resp2 = requests.get(VHEER_URL, headers=HEADERS, timeout=30)
+        
+        if resp2.status_code != 200:
+            logger.error(f"❌ Gagal ambil halaman: {resp2.status_code}")
             return ''
         
-        # Cari semua angka 6 digit
-        candidates = re.findall(r'\b\d{6}\b', text)
+        # STEP 4: Parse HTML dan cari angka 6 digit
+        soup = BeautifulSoup(resp2.text, 'html.parser')
+        all_text = soup.get_text()
         
-        # Daftar angka palsu yang harus dihindari
+        # Cari semua angka 6 digit
+        candidates = re.findall(r'\b\d{6}\b', all_text)
+        
+        # Daftar angka palsu
         fake_numbers = ['000000', '111111', '222222', '333333', '444444',
                        '555555', '666666', '777777', '888888', '999999', '123456']
         
-        # Prioritaskan angka yang bukan palsu
+        # Ambil angka yang valid
         for angka in candidates:
             if angka not in fake_numbers:
-                return angka
-        
-        # Kalau semua palsu, ambil yang pertama
-        return candidates[0] if candidates else ''
-    
-    def ocr_image(self, image_path: str) -> str:
-        """
-        Upload gambar ke Vheer.com dan ambil hasil OCR
-        """
-        driver = None
-        try:
-            logger.info("🚀 Memulai Selenium driver...")
-            driver = webdriver.Firefox(options=self.options)
-            driver.set_page_load_timeout(30)
-            
-            # Buka halaman
-            logger.info("📡 Membuka halaman Vheer...")
-            driver.get("https://vheer.com/app/image-to-text")
-            
-            # Tunggu halaman load
-            time.sleep(3)
-            
-            # Cari input file
-            logger.info("🔍 Mencari input file...")
-            file_input = driver.find_element(By.CSS_SELECTOR, 'input[type="file"]')
-            
-            # Upload file
-            abs_path = os.path.abspath(image_path)
-            logger.info(f"📤 Upload file: {abs_path}")
-            file_input.send_keys(abs_path)
-            
-            # Tunggu upload
-            time.sleep(3)
-            
-            # Cari dan klik tombol proses
-            logger.info("🔍 Mencari tombol Image to Text...")
-            try:
-                # Coba berbagai selector
-                tombol = None
-                selectors = [
-                    "//button[contains(text(), 'Image to Text')]",
-                    "//button[contains(@class, 'bg-amber')]",
-                    "//button[contains(@class, 'violet')]",
-                    "button[type='submit']"
-                ]
-                
-                for selector in selectors:
-                    if selector.startswith('//'):
-                        elements = driver.find_elements(By.XPATH, selector)
-                    else:
-                        elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                    
-                    if elements:
-                        tombol = elements[0]
-                        break
-                
-                if tombol:
-                    driver.execute_script("arguments[0].click();", tombol)
-                    logger.info("✅ Tombol diklik")
-                else:
-                    logger.warning("⚠️ Tombol tidak ditemukan, mungkin langsung proses")
-                    
-            except Exception as e:
-                logger.warning(f"⚠️ Gagal klik tombol: {e}")
-            
-            # TUNGGU HASIL (paling penting!)
-            logger.info("⏳ Menunggu hasil OCR 15 detik...")
-            time.sleep(15)
-            
-            # Ambil semua teks dari halaman
-            logger.info("🔍 Mengambil teks dari halaman...")
-            page_text = driver.find_element(By.TAG_NAME, "body").text
-            
-            # Cari angka valid
-            angka = self._extract_valid_angka(page_text)
-            
-            if angka:
                 logger.info(f"✅ ANGKA DITEMUKAN: {angka}")
                 return angka
-            
-            # Kalau tidak ketemu, coba screenshot untuk debug
-            screenshot_path = "/tmp/vheer_screenshot.png"
-            driver.save_screenshot(screenshot_path)
-            logger.info(f"📸 Screenshot disimpan: {screenshot_path}")
-            
-            logger.warning("⚠️ Tidak ada angka 6 digit dalam response")
-            return ''
-            
-        except Exception as e:
-            logger.error(f"❌ Error Selenium: {e}")
-            return ''
-            
-        finally:
-            if driver:
-                driver.quit()
-                logger.info("🚪 Browser ditutup")
-
-# Buat instance
-vheer_selenium = VheerOCRSelenium()
+        
+        logger.warning("⚠️ Tidak ada angka valid dalam response")
+        return ''
+        
+    except Exception as e:
+        logger.error(f"❌ Error Vheer OCR: {e}")
+        return ''
 
 async def read_captcha(message):
-    """Baca captcha dari foto menggunakan Selenium"""
+    """Baca captcha dari foto"""
     try:
         path = await message.download_media()
         downloaded_photos.append(path)
         logger.info(f"📸 Foto didownload: {path}")
         
-        # Jalankan Selenium di thread pool
+        # Jalankan OCR di thread pool
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, vheer_selenium.ocr_image, path)
+        result = await loop.run_in_executor(None, vheer_ocr, path)
         
         return result if result else None
         
@@ -266,7 +196,6 @@ def cleanup_downloaded_photos():
         try:
             if os.path.exists(path):
                 os.remove(path)
-                logger.info(f"🗑️ Hapus: {path}")
             downloaded_photos.remove(path)
         except:
             pass
@@ -510,12 +439,12 @@ async def message_handler(event):
             kode = ''.join(digits[:6])
             logger.info(f"🔑 Kode dari teks: {kode}")
         
-        # OCR dengan Selenium
+        # OCR Vheer
         if not kode and msg.photo:
-            logger.info("📸 Memulai OCR dengan Selenium...")
+            logger.info("📸 Memulai OCR Vheer...")
             kode = await read_captcha(msg)
             if kode:
-                logger.info(f"✅ Kode dari Selenium: {kode}")
+                logger.info(f"✅ Kode dari Vheer: {kode}")
                 await asyncio.sleep(2)
         
         if kode and len(kode) == 6:
@@ -598,22 +527,8 @@ async def process_queue():
 
 # ==================== MAIN ====================
 async def main():
-    logger.info("🚀 Memulai userbot dengan Selenium OCR...")
+    logger.info("🚀 Memulai userbot dengan Vheer OCR (simple version)...")
     
-    # Bersihkan queue lama
-    try:
-        queue_len = r.llen('pending_requests')
-        if queue_len > 0:
-            logger.info(f"🧹 Membersihkan {queue_len} request lama...")
-            for _ in range(queue_len):
-                r.lpop('pending_requests')
-        keys = r.keys('req:*')
-        if keys:
-            for key in keys:
-                r.delete(key)
-    except Exception as e:
-        logger.error(f"❌ Gagal bersihkan Redis: {e}")
-
     try:
         await client.start()
         me = await client.get_me()
