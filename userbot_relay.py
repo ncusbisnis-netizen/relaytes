@@ -426,52 +426,144 @@ def clean_bind_text(text):
     return text
 
 async def read_number_from_photo_online(message):
-    """OCR menggunakan ocr.space dengan timeout 60 detik"""
+    """
+    OCR menggunakan vheer.com dengan Selenium - KHUSUS HEROKU
+    Menggunakan Chrome & ChromeDriver dari buildpack
+    """
+    from selenium import webdriver
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.chrome.options import Options
+    import tempfile
+    import os
+    import time
+    
+    temp_file = None
+    driver = None
+    
     try:
-        if not OCR_SPACE_API_KEY:
+        logger.info("📸 Mendownload foto captcha untuk OCR via Vheer (Heroku)...")
+        
+        # Download foto
+        photo_data = await message.download_media(bytes)
+        if not photo_data:
+            logger.error("❌ Gagal download foto")
             return None
+            
+        # Simpan ke file temporary
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
+            tmp.write(photo_data)
+            temp_file = tmp.name
+            downloaded_photos.append(temp_file)
         
-        logger.info("📸 Downloading captcha photo...")
-        photo_path = await message.download_media()
-        downloaded_photos.append(photo_path)
+        logger.info(f"✅ Foto tersimpan: {temp_file}")
         
-        with open(photo_path, 'rb') as f:
-            image_data = base64.b64encode(f.read()).decode('utf-8')
+        # Setup Chrome Options untuk Heroku
+        chrome_options = Options()
+        chrome_options.add_argument('--headless=new')
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument('--window-size=1920,1080')
+        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
         
-        response = requests.post(
-            'https://api.ocr.space/parse/image',
-            data={
-                'base64Image': f'data:image/jpeg;base64,{image_data}',
-                'apikey': OCR_SPACE_API_KEY,
-                'language': 'eng',
-                'OCREngine': '2'
-            },
-            timeout=60
+        # Path Chrome dari buildpack Heroku
+        chrome_options.binary_location = os.environ.get("GOOGLE_CHROME_BIN", "/app/.apt/usr/bin/google-chrome")
+        
+        logger.info("🚀 Memulai Chrome WebDriver di Heroku...")
+        
+        # Inisialisasi driver dengan path chromedriver dari buildpack
+        driver = webdriver.Chrome(
+            executable_path=os.environ.get("CHROMEDRIVER_PATH", "/app/.chromedriver/bin/chromedriver"),
+            options=chrome_options
         )
         
-        if response.status_code == 200:
-            result = response.json()
-            if not result.get('IsErroredOnProcessing'):
-                text = result.get('ParsedResults', [{}])[0].get('ParsedText', '')
-                text = re.sub(r'[^0-9]', '', text)
-                match = re.search(r'(\d{6})', text)
-                if match:
-                    return match.group(1)
-        return None
-    except Exception as e:
-        logger.error(f"❌ OCR error: {e}")
-        return None
-
-def cleanup_downloaded_photos():
-    """Hapus file foto sementara"""
-    global downloaded_photos
-    for photo_path in downloaded_photos[:]:
+        wait = WebDriverWait(driver, 30)
+        
+        # Buka halaman Vheer
+        url = "https://vheer.com/app/image-to-text"
+        logger.info(f"📂 Membuka: {url}")
+        driver.get(url)
+        await asyncio.sleep(3)
+        
+        # Upload file
+        logger.info("🔍 Mencari elemen upload...")
         try:
-            if os.path.exists(photo_path):
-                os.remove(photo_path)
-            downloaded_photos.remove(photo_path)
+            file_input = wait.until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='file']"))
+            )
         except:
-            pass
+            logger.info("⚠️ Mencari area drag & drop...")
+            drop_area = wait.until(
+                EC.element_to_be_clickable((By.XPATH, "//div[contains(text(), 'Drag & Drop') or contains(@class, 'dropzone')]"))
+            )
+            drop_area.click()
+            await asyncio.sleep(1)
+            file_input = driver.find_element(By.CSS_SELECTOR, "input[type='file']")
+        
+        # Upload file
+        logger.info(f"📤 Mengupload: {os.path.basename(temp_file)}")
+        file_input.send_keys(os.path.abspath(temp_file))
+        logger.info("✅ File terupload")
+        
+        # Tunggu proses OCR
+        logger.info("⏳ Menunggu hasil OCR (10 detik)...")
+        await asyncio.sleep(10)
+        
+        # Cari teks hasil
+        selectors = [
+            (By.CSS_SELECTOR, "div[class*='result'] pre"),
+            (By.CSS_SELECTOR, "div[class*='output']"),
+            (By.CSS_SELECTOR, "pre"),
+            (By.TAG_NAME, "body")
+        ]
+        
+        extracted_text = ""
+        for selector_type, selector_value in selectors:
+            try:
+                elements = driver.find_elements(selector_type, selector_value)
+                for el in elements:
+                    text = el.text.strip()
+                    if text and len(text) > 5:
+                        extracted_text = text
+                        logger.info(f"✅ Teks ditemukan")
+                        break
+                if extracted_text:
+                    break
+            except:
+                continue
+        
+        if not extracted_text:
+            logger.warning("⚠️ Tidak ada teks")
+            return None
+        
+        # Ekstrak 6 digit angka
+        digits_only = re.sub(r'[^0-9]', '', extracted_text)
+        match = re.search(r'(\d{6})', digits_only)
+        
+        if match:
+            captcha_code = match.group(1)
+            logger.info(f"✅ Kode captcha: {captcha_code}")
+            return captcha_code
+        else:
+            logger.warning(f"❌ Tidak ada 6 digit dalam: {digits_only[:50]}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"❌ OCR Vheer error: {str(e)}")
+        return None
+        
+    finally:
+        if driver:
+            try:
+                driver.quit()
+                logger.info("👋 Browser ditutup")
+            except:
+                pass
 
 def format_final_output(original_text, nickname, region, uid, sid, android, ios):
     """Format output final dengan penanganan Moonton empty yang benar"""
