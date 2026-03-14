@@ -8,26 +8,33 @@ import re
 import logging
 import json
 import requests
-import base64
-from bs4 import BeautifulSoup
 
-# Setup logging
+# ==================== LOGGING ====================
+
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+
 logger = logging.getLogger(__name__)
 
 # ==================== KONFIGURASI ====================
+
 API_ID = int(os.environ.get('API_ID', 0))
 API_HASH = os.environ.get('API_HASH', '')
 SESSION_STRING = os.environ.get('SESSION_STRING', '')
 BOT_B_TOKEN = os.environ.get('BOT_B_TOKEN', '')
 BOT_A_USERNAME = 'bengkelmlbb_bot'
-REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
-STOK_ADMIN_URL = os.environ.get('STOK_ADMIN_URL', 'https://whatsapp.com/channel/0029VbA4PrD5fM5TMgECoE1E')
 
-# ==================== COUNTRY MAPPING (5 NEGARA) ====================
+REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
+
+STOK_ADMIN_URL = os.environ.get(
+    'STOK_ADMIN_URL',
+    'https://whatsapp.com/channel/0029VbA4PrD5fM5TMgECoE1E'
+)
+
+# ==================== COUNTRY ====================
+
 country_mapping = {
     'ID': '🇮🇩 Indonesia',
     'MY': '🇲🇾 Malaysia',
@@ -36,510 +43,311 @@ country_mapping = {
     'TH': '🇹🇭 Thailand',
 }
 
-# Validasi environment
+# ==================== VALIDASI ====================
+
 if not all([API_ID, API_HASH, SESSION_STRING, BOT_B_TOKEN, REDIS_URL]):
-    logger.error("❌ Missing required environment variables!")
+    logger.error("❌ Missing ENV")
     exit(1)
 
 # ==================== REDIS ====================
+
 try:
     r = redis.from_url(REDIS_URL)
     r.ping()
     logger.info("✅ Redis connected")
 except Exception as e:
-    logger.error(f"❌ Redis connection failed: {e}")
+    logger.error(f"❌ Redis error {e}")
     exit(1)
 
-# ==================== GLOBAL VARIABLES ====================
+# ==================== TELEGRAM ====================
+
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
+# ==================== GLOBAL ====================
+
 bot_status = {'in_captcha': False}
+
 sent_requests = {}
 waiting_for_result = {}
+
 downloaded_photos = []
 active_requests = {}
+
 captcha_timer_task = None
 
 REQUEST_TIMEOUT = 30
 CAPTCHA_TIMEOUT = 30
 
-# ==================== VHEER OCR SIMPLE ====================
+# ==================== OCR VHEER ====================
 
-VHEER_URL = "https://vheer.com/app/image-to-text"
+def parse_vheer_response(text):
 
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0',
-    'Origin': 'https://vheer.com',
-    'Referer': 'https://vheer.com/app/image-to-text',
-}
-
-def vheer_ocr(image_path: str) -> str:
-    """
-    Upload gambar ke Vheer.com, tunggu, lalu ambil hasil OCR
-    """
     try:
-        # STEP 1: Upload gambar
-        with open(image_path, 'rb') as f:
-            files = {'file': (os.path.basename(image_path), f, 'image/jpeg')}
-            
-            logger.info("📤 Upload ke Vheer...")
-            resp = requests.post(VHEER_URL, files=files, headers=HEADERS, timeout=30)
-            
-            if resp.status_code != 200:
-                logger.error(f"❌ Upload gagal: {resp.status_code}")
-                return ''
-            
-            logger.info("✅ Upload OK")
-        
-        # STEP 2: TUNGGU 7 DETIK biar server proses OCR
-        logger.info("⏳ Tunggu 7 detik untuk proses OCR...")
-        time.sleep(7)
-        
-        # STEP 3: Ambil halaman hasil (GET)
-        logger.info("📥 Ambil halaman hasil...")
-        resp2 = requests.get(VHEER_URL, headers=HEADERS, timeout=30)
-        
-        if resp2.status_code != 200:
-            logger.error(f"❌ Gagal ambil halaman: {resp2.status_code}")
-            return ''
-        
-        # STEP 4: Parse HTML dan cari angka 6 digit
-        soup = BeautifulSoup(resp2.text, 'html.parser')
-        all_text = soup.get_text()
-        
-        # Cari semua angka 6 digit
-        candidates = re.findall(r'\b\d{6}\b', all_text)
-        
-        # Daftar angka palsu
-        fake_numbers = ['000000', '111111', '222222', '333333', '444444',
-                       '555555', '666666', '777777', '888888', '999999', '123456']
-        
-        # Ambil angka yang valid
-        for angka in candidates:
-            if angka not in fake_numbers:
-                logger.info(f"✅ ANGKA DITEMUKAN: {angka}")
-                return angka
-        
-        logger.warning("⚠️ Tidak ada angka valid dalam response")
-        return ''
-        
-    except Exception as e:
-        logger.error(f"❌ Error Vheer OCR: {e}")
-        return ''
 
-async def read_captcha(message):
-    """Baca captcha dari foto"""
-    try:
-        path = await message.download_media()
-        downloaded_photos.append(path)
-        logger.info(f"📸 Foto didownload: {path}")
-        
-        # Jalankan OCR di thread pool
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, vheer_ocr, path)
-        
-        return result if result else None
-        
-    except Exception as e:
-        logger.error(f"❌ Error read_captcha: {e}")
+        lines = text.split("\n")
+
+        for line in lines:
+
+            if line.startswith("1:"):
+
+                data = json.loads(line[2:])
+
+                captcha = data["paragraphs"][0]["text"]
+
+                numbers = re.findall(r'\d{6}', captcha)
+
+                if numbers:
+                    return numbers[0]
+
         return None
 
-# ==================== FUNGSI BANTUAN ====================
-def clean_bind_text(text):
-    text = re.sub(r'\(Private\)', 'Hide information', text)
-    text = re.sub(r'Bind \(Private\)', 'Hide information', text)
-    text = re.sub(r'Private', 'Hide information', text)
-    
-    if 'Moonton Unverified' in text:
-        parts = text.split('Moonton :', 1)
-        if len(parts) > 1:
-            text = f"{parts[0]}Moonton : empty."
-    
-    text = re.sub(r'\(Unverified\)', 'Failed Verification', text)
-    text = re.sub(r'Unverified', 'Failed Verification', text)
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text
-
-def validate_mlbb_gopay_sync(user_id, server_id):
-    url = 'https://gopay.co.id/games/v1/order/user-account'
-    headers = {
-        'Content-Type': 'application/json',
-        'X-Client': 'web-mobile',
-        'X-Timestamp': str(int(time.time() * 1000)),
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36'
-    }
-    body = {
-        "code": "MOBILE_LEGENDS",
-        "data": {
-            "userId": str(user_id).strip(),
-            "zoneId": str(server_id).strip()
-        }
-    }
-    try:
-        response = requests.post(url, headers=headers, json=body, timeout=30)
-        if response.status_code not in [200, 201]:
-            return {'status': False, 'message': f'HTTP {response.status_code}'}
-        result = response.json()
-        if not result or 'data' not in result:
-            return {'status': False, 'message': 'Invalid response'}
-        data = result['data']
-        username = data.get('username', 'Unknown').replace('+', ' ')
-        country = data.get('countryOrigin', 'ID').upper()
-        region = country_mapping.get(country, f'🌍 {country}')
-        return {'status': True, 'username': username, 'region': region}
     except Exception as e:
-        return {'status': False, 'message': str(e)}
+        logger.error(f"OCR parse error {e}")
+        return None
+
+
+def solve_captcha_vheer(image_path):
+
+    try:
+
+        logger.info("📤 Upload ke Vheer")
+
+        files = {
+            "file": open(image_path, "rb")
+        }
+
+        res = requests.post(
+            "https://vheer.com/api/ocr",
+            files=files,
+            timeout=30
+        )
+
+        if res.status_code != 200:
+            logger.error("❌ OCR HTTP error")
+            return None
+
+        return parse_vheer_response(res.text)
+
+    except Exception as e:
+        logger.error(f"❌ OCR error {e}")
+        return None
+
+
+async def read_captcha(message):
+
+    try:
+
+        path = await message.download_media()
+
+        downloaded_photos.append(path)
+
+        logger.info(f"📸 Download captcha {path}")
+
+        loop = asyncio.get_event_loop()
+
+        result = await loop.run_in_executor(
+            None,
+            solve_captcha_vheer,
+            path
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"❌ captcha read error {e}")
+        return None
+
+
+# ==================== CLEANUP ====================
 
 def cleanup_downloaded_photos():
+
     global downloaded_photos
-    for path in downloaded_photos[:]:
+
+    for p in downloaded_photos[:]:
+
         try:
-            if os.path.exists(path):
-                os.remove(path)
-            downloaded_photos.remove(path)
+
+            if os.path.exists(p):
+
+                os.remove(p)
+
+                logger.info(f"🗑️ delete {p}")
+
+            downloaded_photos.remove(p)
+
         except:
             pass
 
-def format_final_output(original_text, nickname, region, uid, sid, android, ios):
-    keywords = ['Moonton', 'VK', 'Google Play', 'Tiktok', 'Facebook', 'Apple', 'GCID', 'Telegram', 'WhatsApp']
-    lines = original_text.split('\n')
-    groups = {}
-    current_keyword = None
-    current_lines = []
-    
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if stripped.startswith('✧'):
-            if current_keyword:
-                groups[current_keyword] = current_lines
-            if ':' in stripped:
-                parts = stripped[1:].strip().split(':', 1)
-                keyword_raw = parts[0].strip()
-            else:
-                keyword_raw = stripped[1:].strip()
-            current_keyword = keyword_raw
-            current_lines = [stripped]
-        else:
-            if current_keyword:
-                current_lines.append(stripped)
-    if current_keyword:
-        groups[current_keyword] = current_lines
-    
-    bind_info = []
-    for kw in keywords:
-        if kw in groups:
-            lines_group = groups[kw]
-            if kw == "Moonton":
-                sub_lines = [l for l in lines_group if l.startswith('-')]
-                if sub_lines:
-                    for sub in sub_lines:
-                        sub_clean = sub.lstrip('-').strip()
-                        if ':' in sub_clean:
-                            label, value = sub_clean.split(':', 1)
-                            label = label.strip()
-                            value = value.strip()
-                            value = clean_bind_text(value)
-                            bind_info.append(f"• {label}: {value}")
-                        else:
-                            bind_info.append(f"• {sub_clean}")
-                else:
-                    main_line = lines_group[0]
-                    if main_line.startswith('✧'):
-                        main_line = main_line[1:].strip()
-                    if 'empty' in main_line.lower():
-                        if ':' in main_line:
-                            parts = main_line.split(':', 1)
-                            label = parts[0].strip()
-                            if label.count('Moonton') > 1:
-                                label = 'Moonton'
-                            bind_info.append(f"• {label}: empty.")
-                        else:
-                            bind_info.append(f"• Moonton: empty.")
-                    else:
-                        main_line = clean_bind_text(main_line)
-                        if ':' in main_line:
-                            label, value = main_line.split(':', 1)
-                            label = label.strip()
-                            value = value.strip()
-                            bind_info.append(f"• {label}: {value}")
-                        else:
-                            bind_info.append(f"• Moonton: {main_line}")
-            else:
-                main_line = lines_group[0]
-                if main_line.startswith('✧'):
-                    main_line = main_line[1:].strip()
-                main_line = clean_bind_text(main_line)
-                if ':' in main_line:
-                    label, value = main_line.split(':', 1)
-                    label = label.strip()
-                    value = value.strip()
-                    bind_info.append(f"• {label}: {value}")
-                else:
-                    bind_info.append(f"• {kw}: {main_line}")
-        else:
-            bind_info.append(f"• {kw}: empty.")
-    
-    final = f"""INFORMATION ACCOUNT:
-ID Server: {uid} ({sid})
-Nickname: {nickname}
-Region: {region}
 
-BIND INFO:
-{chr(10).join(bind_info)}
+# ==================== BOT API ====================
 
-Device Login: Android {android} | iOS {ios}"""
-    
-    reply_markup = {
-        'inline_keyboard': [
-            [{'text': 'Stok Admin', 'url': STOK_ADMIN_URL}]
-        ]
-    }
-    return final, reply_markup
-
-# ==================== FUNGSI BOT ====================
 async def send_status(chat_id, text, reply_to=None, markup=None):
+
     url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
-    data = {'chat_id': chat_id, 'text': text}
+
+    data = {
+        "chat_id": chat_id,
+        "text": text
+    }
+
     if reply_to:
-        data['reply_to_message_id'] = reply_to
+        data["reply_to_message_id"] = reply_to
+
     if markup:
-        data['reply_markup'] = json.dumps(markup)
+        data["reply_markup"] = json.dumps(markup)
+
     try:
-        resp = requests.post(url, json=data, timeout=10)
-        if resp.status_code == 200:
-            return resp.json()['result']['message_id']
+
+        r = requests.post(url, json=data)
+
+        if r.status_code == 200:
+
+            return r.json()["result"]["message_id"]
+
     except:
         pass
+
     return None
 
+
 async def edit_status(chat_id, msg_id, text, markup=None):
+
     url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/editMessageText"
-    data = {'chat_id': chat_id, 'message_id': msg_id, 'text': text}
+
+    data = {
+        "chat_id": chat_id,
+        "message_id": msg_id,
+        "text": text
+    }
+
     if markup:
-        data['reply_markup'] = json.dumps(markup)
+        data["reply_markup"] = json.dumps(markup)
+
     try:
-        requests.post(url, json=data, timeout=10)
+
+        requests.post(url, json=data)
+
     except:
         pass
 
-# ==================== TIMEOUT CHECKER ====================
-async def timeout_checker():
-    while True:
-        if bot_status['in_captcha']:
-            await asyncio.sleep(1)
-            continue
-        now = time.time()
-        to_remove = []
-        for req_id, req_data in list(active_requests.items()):
-            if now - req_data['start_time'] > REQUEST_TIMEOUT:
-                await edit_status(req_data['chat_id'], req_data['message_id'], 
-                                "Request timeout. Silakan coba lagi.")
-                try:
-                    head = r.lindex('pending_requests', 0)
-                    if head and head.decode('utf-8') == req_id:
-                        r.lpop('pending_requests')
-                    r.delete(req_id)
-                except:
-                    pass
-                waiting_for_result.pop(req_data['chat_id'], None)
-                to_remove.append(req_id)
-        for req_id in to_remove:
-            active_requests.pop(req_id, None)
-        await asyncio.sleep(1)
 
-# ==================== HANDLER ====================
+# ==================== CAPTCHA HANDLER ====================
+
 @events.register(events.NewMessage)
+
 async def message_handler(event):
-    global captcha_timer_task, bot_status
+
+    global captcha_timer_task
+    global bot_status
 
     msg = event.message
+
     if msg.chat_id != 7240340418 and msg.sender_id != 7240340418:
         return
 
     text = msg.text or msg.message or ''
-    logger.info(f"📩 Dari Bot A: {text[:100]}")
 
-    # HASIL INFO
-    if text.startswith('──────────────────────') and 'BIND ACCOUNT INFO' in text:
-        if not active_requests:
-            return
-        req_id, req_info = next(iter(active_requests.items()))
-        
-        uid = re.search(r'ID:?\s*(\d+)', text)
-        sid = re.search(r'Server:?\s*(\d+)', text)
-        android = re.search(r'Android:?\s*(\d+)', text)
-        ios = re.search(r'iOS:?\s*(\d+)', text)
-        
-        uid = uid.group(1) if uid else 'Unknown'
-        sid = sid.group(1) if sid else 'Unknown'
-        android = android.group(1) if android else '0'
-        ios = ios.group(1) if ios else '0'
-        
-        gopay = validate_mlbb_gopay_sync(uid, sid)
-        nickname = gopay['username'] if gopay['status'] else 'Tidak diketahui'
-        region = gopay['region'] if gopay['status'] else '🌍 Tidak diketahui'
-        
-        output, markup = format_final_output(text, nickname, region, uid, sid, android, ios)
-        await edit_status(req_info['chat_id'], req_info['message_id'], output, markup)
-        
-        try:
-            del active_requests[req_id]
-            waiting_for_result.pop(req_info['chat_id'], None)
-        except:
-            pass
-        
-        try:
-            head = r.lindex('pending_requests', 0)
-            if head and head.decode('utf-8') == req_id:
-                r.lpop('pending_requests')
-            r.delete(req_id)
-        except:
-            pass
-        
-        cleanup_downloaded_photos()
-        return
+    logger.info(f"📩 Dari Bot A: {text[:80]}")
 
-    # VERIFIKASI SUKSES
-    if 'verification successful' in text.lower() or '✅ Verifikasi berhasil!' in text:
-        if captcha_timer_task:
-            captcha_timer_task.cancel()
-        bot_status['in_captcha'] = False
-        if active_requests:
-            await asyncio.sleep(5)
-            req_id, req_info = next(iter(active_requests.items()))
-            cmd = f"{req_info['command']} {req_info['args'][0]} {req_info['args'][1]}"
-            await client.send_message(BOT_A_USERNAME, cmd)
-            req_info['start_time'] = time.time()
-        return
+    # ================= CAPTCHA =================
 
-    # CAPTCHA
-    if (msg.photo or 'captcha' in text.lower() or '🔒 Masukkan kode captcha' in text):
-        logger.warning("🚫 CAPTCHA DETECTED!")
-        bot_status['in_captcha'] = True
-        
-        if active_requests:
-            for r in active_requests.values():
-                r['start_time'] = time.time()
-        
-        if captcha_timer_task:
-            captcha_timer_task.cancel()
-        
-        async def reset():
-            await asyncio.sleep(CAPTCHA_TIMEOUT)
-            bot_status['in_captcha'] = False
-            logger.info("⏰ Captcha timeout")
-        captcha_timer_task = asyncio.create_task(reset())
-        
-        # Cek kode di teks dulu
+    if (msg.photo or "captcha" in text.lower()):
+
+        logger.warning("🚫 CAPTCHA DETECTED")
+
+        bot_status["in_captcha"] = True
+
         kode = None
+
         digits = re.findall(r'\d', text)
+
         if len(digits) >= 6:
-            kode = ''.join(digits[:6])
-            logger.info(f"🔑 Kode dari teks: {kode}")
-        
-        # OCR Vheer
+            kode = "".join(digits[:6])
+
         if not kode and msg.photo:
-            logger.info("📸 Memulai OCR Vheer...")
+
+            logger.info("📸 OCR VHEER START")
+
             kode = await read_captcha(msg)
-            if kode:
-                logger.info(f"✅ Kode dari Vheer: {kode}")
-                await asyncio.sleep(2)
-        
+
         if kode and len(kode) == 6:
-            await client.send_message(BOT_A_USERNAME, f"/verify {kode}")
-            logger.info("📤 Perintah verify dikirim")
+
+            await client.send_message(
+                BOT_A_USERNAME,
+                f"/verify {kode}"
+            )
+
+            logger.info(f"✅ CAPTCHA {kode}")
+
         else:
-            logger.error("❌ Gagal mendapatkan kode captcha")
-            cleanup_downloaded_photos()
-            if active_requests:
-                req_id, req_info = next(iter(active_requests.items()))
-                await edit_status(req_info['chat_id'], req_info['message_id'],
-                                "Gagal memproses request. Coba lagi.")
-                try:
-                    head = r.lindex('pending_requests', 0)
-                    if head and head.decode('utf-8') == req_id:
-                        r.lpop('pending_requests')
-                    r.delete(req_id)
-                except:
-                    pass
-                waiting_for_result.pop(req_info['chat_id'], None)
-                del active_requests[req_id]
-            bot_status['in_captcha'] = False
-            if captcha_timer_task:
-                captcha_timer_task.cancel()
+
+            logger.error("❌ OCR gagal")
+
+        cleanup_downloaded_photos()
+
+        bot_status["in_captcha"] = False
+
 
 # ==================== QUEUE ====================
+
 async def process_queue():
-    logger.info("🔄 Queue processor started")
+
+    logger.info("🔄 Queue start")
+
     while True:
+
         try:
-            if not bot_status['in_captcha']:
-                req_bytes = r.lindex('pending_requests', 0)
-                if req_bytes:
-                    req_id = req_bytes.decode('utf-8')
-                    now = time.time()
-                    
-                    if req_id in sent_requests and now - sent_requests[req_id] < 15:
-                        await asyncio.sleep(2)
+
+            if not bot_status["in_captcha"]:
+
+                req = r.lindex("pending_requests", 0)
+
+                if req:
+
+                    req_id = req.decode()
+
+                    data = r.get(req_id)
+
+                    if not data:
+                        r.lpop("pending_requests")
                         continue
-                    
-                    req_json = r.get(req_id)
-                    if not req_json:
-                        r.lpop('pending_requests')
-                        continue
-                    
-                    req_data = json.loads(req_json)
-                    user_id = req_data['chat_id']
-                    reply_id = req_data.get('reply_to_message_id')
-                    
-                    if waiting_for_result.get(user_id):
-                        r.lpop('pending_requests')
-                        r.rpush('pending_requests', req_id)
-                        await asyncio.sleep(5)
-                        continue
-                    
-                    msg_id = await send_status(user_id, "Proses request...", reply_id)
-                    if not msg_id:
-                        r.lpop('pending_requests')
-                        r.delete(req_id)
-                        continue
-                    
-                    active_requests[req_id] = {
-                        'chat_id': user_id,
-                        'message_id': msg_id,
-                        'start_time': now,
-                        'command': req_data['command'],
-                        'args': req_data['args']
-                    }
-                    
+
+                    req_data = json.loads(data)
+
                     cmd = f"{req_data['command']} {req_data['args'][0]} {req_data['args'][1]}"
-                    await client.send_message(BOT_A_USERNAME, cmd)
-                    
-                    sent_requests[req_id] = now
-                    waiting_for_result[user_id] = True
-            else:
-                await asyncio.sleep(1)
+
+                    await client.send_message(
+                        BOT_A_USERNAME,
+                        cmd
+                    )
+
+                    logger.info(f"📤 send {cmd}")
+
         except Exception as e:
-            logger.error(f"❌ Error queue: {e}")
+
+            logger.error(f"queue error {e}")
+
         await asyncio.sleep(2)
 
+
 # ==================== MAIN ====================
+
 async def main():
-    logger.info("🚀 Memulai userbot dengan Vheer OCR (simple version)...")
-    
-    try:
-        await client.start()
-        me = await client.get_me()
-        logger.info(f"✅ Login sebagai: {me.first_name}")
-        
-        client.add_event_handler(message_handler)
-        asyncio.create_task(timeout_checker())
-        await process_queue()
-    except Exception as e:
-        logger.error(f"❌ Fatal error: {e}")
-        raise
+
+    logger.info("🚀 START USERBOT")
+
+    await client.start()
+
+    me = await client.get_me()
+
+    logger.info(f"LOGIN {me.first_name}")
+
+    client.add_event_handler(message_handler)
+
+    await process_queue()
+
 
 if __name__ == "__main__":
+
     asyncio.run(main())
