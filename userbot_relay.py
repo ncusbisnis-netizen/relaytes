@@ -8,7 +8,12 @@ import re
 import logging
 import json
 import requests
-import base64
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
 
 # Setup logging
 logging.basicConfig(
@@ -24,257 +29,15 @@ SESSION_STRING = os.environ.get('SESSION_STRING', '')
 BOT_B_TOKEN = os.environ.get('BOT_B_TOKEN', '')
 BOT_A_USERNAME = 'bengkelmlbb_bot'
 REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
-OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', '')
 STOK_ADMIN_URL = os.environ.get('STOK_ADMIN_URL', 'https://whatsapp.com/channel/0029VbA4PrD5fM5TMgECoE1E')
 
-# ==================== COUNTRY MAPPING SEDERHANA ====================
+# ==================== COUNTRY MAPPING (5 NEGARA) ====================
 country_mapping = {
-  'AF': '🇦🇫 Afghanistan',
-  'AX': '🇦🇽 Åland Islands',
-  'AL': '🇦🇱 Albania',
-  'DZ': '🇩🇿 Algeria',
-  'AS': '🇦🇸 American Samoa',
-  'AD': '🇦🇩 Andorra',
-  'AO': '🇦🇴 Angola',
-  'AI': '🇦🇮 Anguilla',
-  'AQ': '🇦🇶 Antarctica',
-  'AG': '🇦🇬 Antigua and Barbuda',
-  'AR': '🇦🇷 Argentina',
-  'AM': '🇦🇲 Armenia',
-  'AW': '🇦🇼 Aruba',
-  'AU': '🇦🇺 Australia',
-  'AT': '🇦🇹 Austria',
-  'AZ': '🇦🇿 Azerbaijan',
-  'BS': '🇧🇸 Bahamas',
-  'BH': '🇧🇭 Bahrain',
-  'BD': '🇧🇩 Bangladesh',
-  'BB': '🇧🇧 Barbados',
-  'BY': '🇧🇾 Belarus',
-  'BE': '🇧🇪 Belgium',
-  'BZ': '🇧🇿 Belize',
-  'BJ': '🇧🇯 Benin',
-  'BM': '🇧🇲 Bermuda',
-  'BT': '🇧🇹 Bhutan',
-  'BO': '🇧🇴 Bolivia, Plurinational State of bolivia',
-  'BA': '🇧🇦 Bosnia and Herzegovina',
-  'BW': '🇧🇼 Botswana',
-  'BV': '🇧🇻 Bouvet Island',
-  'BR': '🇧🇷 Brazil',
-  'IO': '🇮🇴 British Indian Ocean Territory',
-  'BN': '🇧🇳 Brunei Darussalam',
-  'BG': '🇧🇬 Bulgaria',
-  'BF': '🇧🇫 Burkina Faso',
-  'BI': '🇧🇮 Burundi',
-  'KH': '🇰🇭 Cambodia',
-  'CM': '🇨🇲 Cameroon',
-  'CA': '🇨🇦 Canada',
-  'CV': '🇨🇻 Cape Verde',
-  'KY': '🇰🇾 Cayman Islands',
-  'CF': '🇨🇫 Central African Republic',
-  'TD': '🇹🇩 Chad',
-  'CL': '🇨🇱 Chile',
-  'CN': '🇨🇳 China',
-  'CX': '🇨🇽 Christmas Island',
-  'CC': '🇨🇨 Cocos (Keeling) Islands',
-  'CO': '🇨🇴 Colombia',
-  'KM': '🇰🇲 Comoros',
-  'CG': '🇨🇬 Congo',
-  'CD': '🇨🇩 Congo, The Democratic Republic of the Congo',
-  'CK': '🇨🇰 Cook Islands',
-  'CR': '🇨🇷 Costa Rica',
-  'CI': "🇨🇮 Cote d'Ivoire",
-  'HR': '🇭🇷 Croatia',
-  'CU': '🇨🇺 Cuba',
-  'CY': '🇨🇾 Cyprus',
-  'CZ': '🇨🇿 Czech Republic',
-  'DK': '🇩🇰 Denmark',
-  'DJ': '🇩🇯 Djibouti',
-  'DM': '🇩🇲 Dominica',
-  'DO': '🇩🇴 Dominican Republic',
-  'EC': '🇪🇨 Ecuador',
-  'EG': '🇪🇬 Egypt',
-  'SV': '🇸🇻 El Salvador',
-  'GQ': '🇬🇶 Equatorial Guinea',
-  'ER': '🇪🇷 Eritrea',
-  'EE': '🇪🇪 Estonia',
-  'ET': '🇪🇹 Ethiopia',
-  'FK': '🇫🇰 Falkland Islands (Malvinas)',
-  'FO': '🇫🇴 Faroe Islands',
-  'FJ': '🇫🇯 Fiji',
-  'FI': '🇫🇮 Finland',
-  'FR': '🇫🇷 France',
-  'GF': '🇬🇫 French Guiana',
-  'PF': '🇵🇫 French Polynesia',
-  'TF': '🇹🇫 French Southern Territories',
-  'GA': '🇬🇦 Gabon',
-  'GM': '🇬🇲 Gambia',
-  'GE': '🇬🇪 Georgia',
-  'DE': '🇩🇪 Germany',
-  'GH': '🇬🇭 Ghana',
-  'GI': '🇬🇮 Gibraltar',
-  'GR': '🇬🇷 Greece',
-  'GL': '🇬🇱 Greenland',
-  'GD': '🇬🇩 Grenada',
-  'GP': '🇬🇵 Guadeloupe',
-  'GU': '🇬🇺 Guam',
-  'GT': '🇬🇹 Guatemala',
-  'GG': '🇬🇬 Guernsey',
-  'GN': '🇬🇳 Guinea',
-  'GW': '🇬🇼 Guinea-Bissau',
-  'GY': '🇬🇾 Guyana',
-  'HT': '🇭🇹 Haiti',
-  'HM': '🇭🇲 Heard Island and Mcdonald Islands',
-  'VA': '🇻🇦 Holy See (Vatican City State)',
-  'HN': '🇭🇳 Honduras',
-  'HK': '🇭🇰 Hong Kong',
-  'HU': '🇭🇺 Hungary',
-  'IS': '🇮🇸 Iceland',
-  'IN': '🇮🇳 India',
-  'ID': '🇮🇩 Indonesia',
-  'IR': '🇮🇷 Iran, Islamic Republic of Persian Gulf',
-  'IQ': '🇮🇶 Iraq',
-  'IE': '🇮🇪 Ireland',
-  'IM': '🇮🇲 Isle of Man',
-  'IL': '🇮🇱 Israel',
-  'IT': '🇮🇹 Italy',
-  'JM': '🇯🇲 Jamaica',
-  'JP': '🇯🇵 Japan',
-  'JE': '🇯🇪 Jersey',
-  'JO': '🇯🇴 Jordan',
-  'KZ': '🇰🇿 Kazakhstan',
-  'KE': '🇰🇪 Kenya',
-  'KI': '🇰🇮 Kiribati',
-  'KP': "🇰🇵 Korea, Democratic People's Republic of Korea",
-  'KR': '🇰🇷 Korea, Republic of South Korea',
-  'XK': '🇽🇰 Kosovo',
-  'KW': '🇰🇼 Kuwait',
-  'KG': '🇰🇬 Kyrgyzstan',
-  'LA': '🇱🇦 Laos',
-  'LV': '🇱🇻 Latvia',
-  'LB': '🇱🇧 Lebanon',
-  'LS': '🇱🇸 Lesotho',
-  'LR': '🇱🇷 Liberia',
-  'LY': '🇱🇾 Libyan Arab Jamahiriya',
-  'LI': '🇱🇮 Liechtenstein',
-  'LT': '🇱🇹 Lithuania',
-  'LU': '🇱🇺 Luxembourg',
-  'MO': '🇲🇴 Macao',
-  'MK': '🇲🇰 Macedonia',
-  'MG': '🇲🇬 Madagascar',
-  'MW': '🇲🇼 Malawi',
-  'MY': '🇲🇾 Malaysia',
-  'MV': '🇲🇻 Maldives',
-  'ML': '🇲🇱 Mali',
-  'MT': '🇲🇹 Malta',
-  'MH': '🇲🇭 Marshall Islands',
-  'MQ': '🇲🇶 Martinique',
-  'MR': '🇲🇷 Mauritania',
-  'MU': '🇲🇺 Mauritius',
-  'YT': '🇾🇹 Mayotte',
-  'MX': '🇲🇽 Mexico',
-  'FM': '🇫🇲 Micronesia, Federated States of Micronesia',
-  'MD': '🇲🇩 Moldova',
-  'MC': '🇲🇨 Monaco',
-  'MN': '🇲🇳 Mongolia',
-  'ME': '🇲🇪 Montenegro',
-  'MS': '🇲🇸 Montserrat',
-  'MA': '🇲🇦 Morocco',
-  'MZ': '🇲🇿 Mozambique',
-  'MM': '🇲🇲 Myanmar',
-  'NA': '🇳🇦 Namibia',
-  'NR': '🇳🇷 Nauru',
-  'NP': '🇳🇵 Nepal',
-  'NL': '🇳🇱 Netherlands',
-  'AN': 'Netherlands Antilles',
-  'NC': '🇳🇨 New Caledonia',
-  'NZ': '🇳🇿 New Zealand',
-  'NI': '🇳🇮 Nicaragua',
-  'NE': '🇳🇪 Niger',
-  'NG': '🇳🇬 Nigeria',
-  'NU': '🇳🇺 Niue',
-  'NF': '🇳🇫 Norfolk Island',
-  'MP': '🇲🇵 Northern Mariana Islands',
-  'NO': '🇳🇴 Norway',
-  'OM': '🇴🇲 Oman',
-  'PK': '🇵🇰 Pakistan',
-  'PW': '🇵🇼 Palau',
-  'PS': '🇵🇸 Palestinian Territory, Occupied',
-  'PA': '🇵🇦 Panama',
-  'PG': '🇵🇬 Papua New Guinea',
-  'PY': '🇵🇾 Paraguay',
-  'PE': '🇵🇪 Peru',
-  'PH': '🇵🇭 Philippines',
-  'PN': '🇵🇳 Pitcairn',
-  'PL': '🇵🇱 Poland',
-  'PT': '🇵🇹 Portugal',
-  'PR': '🇵🇷 Puerto Rico',
-  'QA': '🇶🇦 Qatar',
-  'RO': '🇷🇴 Romania',
-  'RU': '🇷🇺 Russia',
-  'RW': '🇷🇼 Rwanda',
-  'RE': '🇷🇪 Reunion',
-  'BL': '🇧🇱 Saint Barthelemy',
-  'SH': '🇸🇭 Saint Helena, Ascension and Tristan Da Cunha',
-  'KN': '🇰🇳 Saint Kitts and Nevis',
-  'LC': '🇱🇨 Saint Lucia',
-  'MF': '🇲🇫 Saint Martin',
-  'PM': '🇵🇲 Saint Pierre and Miquelon',
-  'VC': '🇻🇨 Saint Vincent and the Grenadines',
-  'WS': '🇼🇸 Samoa',
-  'SM': '🇸🇲 San Marino',
-  'ST': '🇸🇹 Sao Tome and Principe',
-  'SA': '🇸🇦 Saudi Arabia',
-  'SN': '🇸🇳 Senegal',
-  'RS': '🇷🇸 Serbia',
-  'SC': '🇸🇨 Seychelles',
-  'SL': '🇸🇱 Sierra Leone',
-  'SG': '🇸🇬 Singapore',
-  'SK': '🇸🇰 Slovakia',
-  'SI': '🇸🇮 Slovenia',
-  'SB': '🇸🇧 Solomon Islands',
-  'SO': '🇸🇴 Somalia',
-  'ZA': '🇿🇦 South Africa',
-  'SS': '🇸🇸 South Sudan',
-  'GS': '🇬🇸 South Georgia and the South Sandwich Islands',
-  'ES': '🇪🇸 Spain',
-  'LK': '🇱🇰 Sri Lanka',
-  'SD': '🇸🇩 Sudan',
-  'SR': '🇸🇷 Suriname',
-  'SJ': '🇸🇯 Svalbard and Jan Mayen',
-  'SZ': '🇸🇿 Eswatini',
-  'SE': '🇸🇪 Sweden',
-  'CH': '🇨🇭 Switzerland',
-  'SY': '🇸🇾 Syrian Arab Republic',
-  'TW': '🇹🇼 Taiwan',
-  'TJ': '🇹🇯 Tajikistan',
-  'TZ': '🇹🇿 Tanzania, United Republic of Tanzania',
-  'TH': '🇹🇭 Thailand',
-  'TL': '🇹🇱 Timor-Leste',
-  'TG': '🇹🇬 Togo',
-  'TK': '🇹🇰 Tokelau',
-  'TO': '🇹🇴 Tonga',
-  'TT': '🇹🇹 Trinidad and Tobago',
-  'TN': '🇹🇳 Tunisia',
-  'TR': '🇹🇷 Turkey',
-  'TM': '🇹🇲 Turkmenistan',
-  'TC': '🇹🇨 Turks and Caicos Islands',
-  'TV': '🇹🇻 Tuvalu',
-  'UG': '🇺🇬 Uganda',
-  'UA': '🇺🇦 Ukraine',
-  'AE': '🇦🇪 United Arab Emirates',
-  'GB': '🇬🇧 United Kingdom',
-  'US': '🇺🇸 United States',
-  'UY': '🇺🇾 Uruguay',
-  'UZ': '🇺🇿 Uzbekistan',
-  'VU': '🇻🇺 Vanuatu',
-  'VE': '🇻🇪 Venezuela, Bolivarian Republic of Venezuela',
-  'VN': '🇻🇳 Vietnam',
-  'VG': '🇻🇬 Virgin Islands, British',
-  'VI': '🇻🇮 Virgin Islands, U.S.',
-  'WF': '🇼🇫 Wallis and Futuna',
-  'YE': '🇾🇪 Yemen',
-  'ZM': '🇿🇲 Zambia',
-  'ZW': '🇿🇼 Zimbabwe',
+    'ID': '🇮🇩 Indonesia',
+    'MY': '🇲🇾 Malaysia',
+    'SG': '🇸🇬 Singapore',
+    'PH': '🇵🇭 Philippines',
+    'TH': '🇹🇭 Thailand',
 }
 
 # Validasi environment
@@ -295,54 +58,189 @@ except Exception as e:
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 bot_status = {'in_captcha': False}
-sent_requests = {}          # untuk rate limiting
-waiting_for_result = {}     # flag per user
-downloaded_photos = []       # untuk cleanup file OCR
-
-# Data request yang sedang aktif (hanya satu dalam satu waktu)
-active_requests = {}        # key: req_id, value: dict {chat_id, message_id, start_time, command, args}
-
-# Timer untuk captcha (agar tidak stuck selamanya)
+sent_requests = {}
+waiting_for_result = {}
+downloaded_photos = []
+active_requests = {}
 captcha_timer_task = None
 
 # Konstanta timeout
 REQUEST_TIMEOUT = 30
 CAPTCHA_TIMEOUT = 30
 
+# ==================== CLASS OCR SELENIUM ====================
+
+class VheerOCRSelenium:
+    """OCR Vheer menggunakan Selenium (browser sungguhan)"""
+    
+    def __init__(self):
+        self.options = Options()
+        self.options.add_argument('--headless')  # Jalan di background
+        self.options.add_argument('--no-sandbox')
+        self.options.add_argument('--disable-dev-shm-usage')
+        self.options.add_argument('--disable-gpu')
+        self.options.add_argument('--window-size=1920,1080')
+        
+        # Set binary location untuk Heroku
+        firefox_bin = os.environ.get('FIREFOX_BIN', '/app/.apt/usr/bin/firefox')
+        if os.path.exists(firefox_bin):
+            self.options.binary_location = firefox_bin
+            
+    def _extract_valid_angka(self, text: str) -> str:
+        """Ekstrak angka 6 digit yang valid dari teks"""
+        if not text:
+            return ''
+        
+        # Cari semua angka 6 digit
+        candidates = re.findall(r'\b\d{6}\b', text)
+        
+        # Daftar angka palsu yang harus dihindari
+        fake_numbers = ['000000', '111111', '222222', '333333', '444444',
+                       '555555', '666666', '777777', '888888', '999999', '123456']
+        
+        for angka in candidates:
+            if angka not in fake_numbers:
+                return angka
+        
+        # Kalau semua palsu, ambil yang pertama
+        return candidates[0] if candidates else ''
+    
+    def ocr_image(self, image_path: str) -> str:
+        """
+        Upload gambar ke Vheer.com dan ambil hasil OCR
+        """
+        driver = None
+        try:
+            logger.info("🚀 Memulai Selenium driver...")
+            driver = webdriver.Firefox(options=self.options)
+            driver.set_page_load_timeout(30)
+            
+            # Buka halaman
+            logger.info("📡 Membuka halaman Vheer...")
+            driver.get("https://vheer.com/app/image-to-text")
+            
+            # Tunggu halaman load
+            time.sleep(3)
+            
+            # Cari input file
+            logger.info("🔍 Mencari input file...")
+            file_input = driver.find_element(By.CSS_SELECTOR, 'input[type="file"]')
+            
+            # Upload file
+            abs_path = os.path.abspath(image_path)
+            logger.info(f"📤 Upload file: {abs_path}")
+            file_input.send_keys(abs_path)
+            
+            # Tunggu upload
+            time.sleep(3)
+            
+            # Cari dan klik tombol proses
+            logger.info("🔍 Mencari tombol Image to Text...")
+            try:
+                # Coba berbagai selector
+                tombol = None
+                selectors = [
+                    "//button[contains(text(), 'Image to Text')]",
+                    "//button[contains(@class, 'bg-amber')]",
+                    "//button[contains(@class, 'violet')]",
+                    "button[type='submit']"
+                ]
+                
+                for selector in selectors:
+                    if selector.startswith('//'):
+                        elements = driver.find_elements(By.XPATH, selector)
+                    else:
+                        elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                    
+                    if elements:
+                        tombol = elements[0]
+                        break
+                
+                if tombol:
+                    driver.execute_script("arguments[0].click();", tombol)
+                    logger.info("✅ Tombol diklik")
+                else:
+                    logger.warning("⚠️ Tombol tidak ditemukan")
+                    
+            except Exception as e:
+                logger.warning(f"⚠️ Gagal klik tombol: {e}")
+            
+            # TUNGGU HASIL (paling penting!)
+            logger.info("⏳ Menunggu hasil OCR 15 detik...")
+            time.sleep(15)
+            
+            # Ambil semua teks dari halaman
+            logger.info("🔍 Mengambil teks dari halaman...")
+            page_text = driver.find_element(By.TAG_NAME, "body").text
+            
+            # Cari angka valid
+            angka = self._extract_valid_angka(page_text)
+            
+            if angka:
+                logger.info(f"✅ ANGKA DITEMUKAN: {angka}")
+                return angka
+            
+            # Kalau tidak ketemu, coba screenshot untuk debug
+            screenshot_path = "/tmp/vheer_screenshot.png"
+            driver.save_screenshot(screenshot_path)
+            logger.info(f"📸 Screenshot disimpan: {screenshot_path}")
+            
+            logger.warning("⚠️ Tidak ada angka 6 digit dalam response")
+            return ''
+            
+        except Exception as e:
+            logger.error(f"❌ Error Selenium: {e}")
+            return ''
+            
+        finally:
+            if driver:
+                driver.quit()
+                logger.info("🚪 Browser ditutup")
+
+# Buat instance
+vheer_selenium = VheerOCRSelenium()
+
+async def read_captcha(message):
+    """Baca captcha dari foto menggunakan Selenium"""
+    try:
+        path = await message.download_media()
+        downloaded_photos.append(path)
+        logger.info(f"📸 Foto didownload: {path}")
+        
+        # Jalankan Selenium di thread pool
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, vheer_selenium.ocr_image, path)
+        
+        return result if result else None
+        
+    except Exception as e:
+        logger.error(f"❌ Error read_captcha: {e}")
+        return None
+
 # ==================== FUNGSI BANTUAN ====================
 def clean_bind_text(text):
-    """Bersihkan text bind info"""
-    # 1. Handle (Private) dan variasinya
     text = re.sub(r'\(Private\)', 'Hide information', text)
     text = re.sub(r'Bind \(Private\)', 'Hide information', text)
     text = re.sub(r'Private', 'Hide information', text)
     
-    # 2. Handle Moonton Unverified (khusus Moonton)
     if 'Moonton Unverified' in text:
         parts = text.split('Moonton :', 1)
         if len(parts) > 1:
             text = f"{parts[0]}Moonton : empty."
     
-    # 3. Handle (Unverified) untuk yang lain
     text = re.sub(r'\(Unverified\)', 'Failed Verification', text)
     text = re.sub(r'Unverified', 'Failed Verification', text)
-    
-    # Bersihkan spasi berlebih
     text = re.sub(r'\s+', ' ', text).strip()
-    
     return text
 
 def validate_mlbb_gopay_sync(user_id, server_id):
-    """Validasi akun MLBB menggunakan API GoPay"""
     url = 'https://gopay.co.id/games/v1/order/user-account'
-    
     headers = {
         'Content-Type': 'application/json',
         'X-Client': 'web-mobile',
         'X-Timestamp': str(int(time.time() * 1000)),
         'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36'
     }
-    
     body = {
         "code": "MOBILE_LEGENDS",
         "data": {
@@ -350,135 +248,34 @@ def validate_mlbb_gopay_sync(user_id, server_id):
             "zoneId": str(server_id).strip()
         }
     }
-    
     try:
-        logger.info(f"📤 GoPay Request: {user_id}:{server_id}")
-        
         response = requests.post(url, headers=headers, json=body, timeout=30)
-        logger.info(f"📥 Response status: {response.status_code}")
-        
         if response.status_code not in [200, 201]:
             return {'status': False, 'message': f'HTTP {response.status_code}'}
-        
         result = response.json()
         if not result or 'data' not in result:
             return {'status': False, 'message': 'Invalid response'}
-        
         data = result['data']
         username = data.get('username', 'Unknown').replace('+', ' ')
         country = data.get('countryOrigin', 'ID').upper()
         region = country_mapping.get(country, f'🌍 {country}')
-        
-        logger.info(f"✅ GoPay SUCCESS: {username} - {region}")
-        
-        return {
-            'status': True,
-            'username': username,
-            'region': region
-        }
-        
+        return {'status': True, 'username': username, 'region': region}
     except Exception as e:
-        logger.error(f"❌ Error: {e}")
         return {'status': False, 'message': str(e)}
 
-# (fungsi clean_bind_text kedua – sebenarnya duplikat, biarkan saja)
-def clean_bind_text(text):
-    """Bersihkan text bind info"""
-    
-    # Handle (Private) dan variasinya
-    if 'Private' in text:
-        text = re.sub(r'Bind\s*\(Private\)', 'Hide information', text)
-        text = re.sub(r'\(Private\)', 'Hide information', text)
-        text = re.sub(r'\bPrivate\b', 'Hide information', text)
-    
-    # Handle (Unverified) - hapus saja
-    text = re.sub(r'\s*\(Unverified\)', '', text)
-    
-    # Handle kasus "Moonton Unverified" (tanpa kurung)
-    if 'Moonton Unverified' in text:
-        # Jika sudah ada format "Moonton : something"
-        if 'Moonton :' in text or 'Moonton:' in text:
-            text = re.sub(r'Moonton\s*:\s*Moonton\s+Unverified', 'Moonton: empty.', text)
-            text = re.sub(r'Moonton:\s*Moonton\s+Unverified', 'Moonton: empty.', text)
-        else:
-            text = re.sub(r'Moonton\s+Unverified', 'Moonton: empty.', text)
-    
-    # CEK KHUSUS: Jika teks mengandung "empty" dan "Moonton" dua kali
-    if 'empty' in text.lower() and text.count('Moonton') > 1:
-        # Ambil hanya satu "Moonton" sebelum "empty"
-        parts = text.split('empty', 1)
-        # Cari bagian sebelum empty yang mengandung Moonton
-        before_empty = parts[0]
-        if 'Moonton' in before_empty:
-            # Ambil Moonton terakhir sebelum empty
-            moonton_parts = before_empty.split('Moonton')
-            if len(moonton_parts) > 1:
-                # Gunakan Moonton yang terakhir
-                text = f"Moonton: empty.{parts[1] if len(parts) > 1 else ''}"
-    
-    # HAPUS TITIK GANDA - jika ada "empty.." ganti jadi "empty."
-    text = re.sub(r'empty\.\.', 'empty.', text)
-    text = re.sub(r'empty\.\.', 'empty.', text)  # lakukan dua kali untuk jaga-jaga
-    
-    # Bersihkan spasi berlebih
-    text = re.sub(r'\s+', ' ', text).strip()
-    
-    return text
-
-async def read_number_from_photo_online(message):
-    """OCR menggunakan ocr.space dengan timeout 60 detik"""
-    try:
-        if not OCR_SPACE_API_KEY:
-            return None
-        
-        logger.info("📸 Downloading captcha photo...")
-        photo_path = await message.download_media()
-        downloaded_photos.append(photo_path)
-        
-        with open(photo_path, 'rb') as f:
-            image_data = base64.b64encode(f.read()).decode('utf-8')
-        
-        response = requests.post(
-            'https://api.ocr.space/parse/image',
-            data={
-                'base64Image': f'data:image/jpeg;base64,{image_data}',
-                'apikey': OCR_SPACE_API_KEY,
-                'language': 'eng',
-                'OCREngine': '2'
-            },
-            timeout=60
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
-            if not result.get('IsErroredOnProcessing'):
-                text = result.get('ParsedResults', [{}])[0].get('ParsedText', '')
-                text = re.sub(r'[^0-9]', '', text)
-                match = re.search(r'(\d{6})', text)
-                if match:
-                    return match.group(1)
-        return None
-    except Exception as e:
-        logger.error(f"❌ OCR error: {e}")
-        return None
-
 def cleanup_downloaded_photos():
-    """Hapus file foto sementara"""
     global downloaded_photos
-    for photo_path in downloaded_photos[:]:
+    for path in downloaded_photos[:]:
         try:
-            if os.path.exists(photo_path):
-                os.remove(photo_path)
-            downloaded_photos.remove(photo_path)
+            if os.path.exists(path):
+                os.remove(path)
+                logger.info(f"🗑️ Hapus: {path}")
+            downloaded_photos.remove(path)
         except:
             pass
 
 def format_final_output(original_text, nickname, region, uid, sid, android, ios):
-    """Format output final dengan penanganan Moonton empty yang benar"""
-    
     keywords = ['Moonton', 'VK', 'Google Play', 'Tiktok', 'Facebook', 'Apple', 'GCID', 'Telegram', 'WhatsApp']
-    
-    # Kelompokkan baris berdasarkan keyword utama (diawali ✧)
     lines = original_text.split('\n')
     groups = {}
     current_keyword = None
@@ -488,24 +285,19 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios)
         stripped = line.strip()
         if not stripped:
             continue
-        
         if stripped.startswith('✧'):
             if current_keyword:
                 groups[current_keyword] = current_lines
-            
-            # Ambil nama keyword (sebelum ':')
             if ':' in stripped:
                 parts = stripped[1:].strip().split(':', 1)
                 keyword_raw = parts[0].strip()
             else:
                 keyword_raw = stripped[1:].strip()
-            
             current_keyword = keyword_raw
             current_lines = [stripped]
         else:
             if current_keyword:
                 current_lines.append(stripped)
-    
     if current_keyword:
         groups[current_keyword] = current_lines
     
@@ -513,49 +305,34 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios)
     for kw in keywords:
         if kw in groups:
             lines_group = groups[kw]
-            
             if kw == "Moonton":
-                # Cari sub-baris yang diawali '-'
                 sub_lines = [l for l in lines_group if l.startswith('-')]
-                
                 if sub_lines:
-                    # Ada beberapa akun Moonton, tampilkan masing-masing
                     for sub in sub_lines:
                         sub_clean = sub.lstrip('-').strip()
                         if ':' in sub_clean:
                             label, value = sub_clean.split(':', 1)
                             label = label.strip()
                             value = value.strip()
-                            # Bersihkan value
                             value = clean_bind_text(value)
                             bind_info.append(f"• {label}: {value}")
                         else:
                             bind_info.append(f"• {sub_clean}")
                 else:
-                    # Hanya satu baris Moonton
                     main_line = lines_group[0]
-                    # Hapus '✧' dan bersihkan
                     if main_line.startswith('✧'):
                         main_line = main_line[1:].strip()
-                    
-                    # Cek apakah ini baris empty
                     if 'empty' in main_line.lower():
-                        # Format dengan benar - pastikan tidak double dot
                         if ':' in main_line:
                             parts = main_line.split(':', 1)
                             label = parts[0].strip()
-                            # Pastikan label hanya "Moonton" sekali
                             if label.count('Moonton') > 1:
                                 label = 'Moonton'
-                            # Gunakan "empty." tanpa tambahan titik
                             bind_info.append(f"• {label}: empty.")
                         else:
                             bind_info.append(f"• Moonton: empty.")
                     else:
-                        # Tidak empty, proses normal
                         main_line = clean_bind_text(main_line)
-                        
-                        # Pastikan formatnya "Moonton: value"
                         if ':' in main_line:
                             label, value = main_line.split(':', 1)
                             label = label.strip()
@@ -564,14 +341,10 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios)
                         else:
                             bind_info.append(f"• Moonton: {main_line}")
             else:
-                # Keyword lain: ambil baris utama saja
                 main_line = lines_group[0]
                 if main_line.startswith('✧'):
                     main_line = main_line[1:].strip()
-                
                 main_line = clean_bind_text(main_line)
-                
-                # Pastikan formatnya "Keyword: value"
                 if ':' in main_line:
                     label, value = main_line.split(':', 1)
                     label = label.strip()
@@ -580,7 +353,6 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios)
                 else:
                     bind_info.append(f"• {kw}: {main_line}")
         else:
-            # Keyword tidak ditemukan
             bind_info.append(f"• {kw}: empty.")
     
     final = f"""INFORMATION ACCOUNT:
@@ -600,282 +372,179 @@ Device Login: Android {android} | iOS {ios}"""
     }
     return final, reply_markup
 
-# ==================== FUNGSI KOMUNIKASI DENGAN BOT B ====================
-# <-- PERUBAHAN PERTAMA: tambah parameter reply_to_message_id -->
-async def send_status_to_user(chat_id, text, reply_to_message_id=None, reply_markup=None):
-    """Kirim pesan status ke user melalui Bot B (bisa sebagai reply)"""
+# ==================== FUNGSI BOT ====================
+async def send_status(chat_id, text, reply_to=None, markup=None):
     url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
-    data = {
-        'chat_id': chat_id,
-        'text': text,
-        # parse_mode dihapus (None) untuk menghindari error karakter khusus
-    }
-    if reply_to_message_id:                                # <-- BARIS BARU
-        data['reply_to_message_id'] = reply_to_message_id # <-- BARIS BARU
-    if reply_markup:
-        data['reply_markup'] = json.dumps(reply_markup)
+    data = {'chat_id': chat_id, 'text': text}
+    if reply_to:
+        data['reply_to_message_id'] = reply_to
+    if markup:
+        data['reply_markup'] = json.dumps(markup)
     try:
-        logger.info(f"📤 Mengirim status ke user {chat_id}" + (f" (reply ke {reply_to_message_id})" if reply_to_message_id else ""))
-        response = requests.post(url, json=data, timeout=10)
-        if response.status_code == 200:
-            msg_id = response.json()['result']['message_id']
-            logger.info(f"✅ Status terkirim, message_id: {msg_id}")
-            return msg_id
-        else:
-            logger.error(f"❌ Gagal kirim status: {response.status_code} - {response.text}")
-    except Exception as e:
-        logger.error(f"❌ Exception kirim status: {e}")
+        resp = requests.post(url, json=data, timeout=10)
+        if resp.status_code == 200:
+            return resp.json()['result']['message_id']
+    except:
+        pass
     return None
 
-async def edit_status_message(chat_id, message_id, text, reply_markup=None):
-    """Edit pesan yang sudah dikirim ke user melalui Bot B"""
+async def edit_status(chat_id, msg_id, text, markup=None):
     url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/editMessageText"
-    data = {
-        'chat_id': chat_id,
-        'message_id': message_id,
-        'text': text,
-        # parse_mode dihapus (None)
-    }
-    if reply_markup:
-        data['reply_markup'] = json.dumps(reply_markup)
+    data = {'chat_id': chat_id, 'message_id': msg_id, 'text': text}
+    if markup:
+        data['reply_markup'] = json.dumps(markup)
     try:
-        logger.info(f"✏️ Mengedit pesan {message_id} untuk user {chat_id}")
-        response = requests.post(url, json=data, timeout=10)
-        if response.status_code == 200:
-            logger.info(f"✅ Pesan {message_id} berhasil diedit")
-        else:
-            logger.error(f"❌ Gagal edit pesan {message_id}: {response.status_code} - {response.text}")
-    except Exception as e:
-        logger.error(f"❌ Exception saat edit pesan: {e}")
+        requests.post(url, json=data, timeout=10)
+    except:
+        pass
 
 # ==================== TIMEOUT CHECKER ====================
 async def timeout_checker():
-    """Loop untuk memonitor request yang melebihi batas waktu, 
-       namun ditangguhkan selama captcha berlangsung."""
     while True:
-        # Jika sedang dalam captcha, timeout ditangguhkan
         if bot_status['in_captcha']:
             await asyncio.sleep(1)
             continue
-
         now = time.time()
         to_remove = []
         for req_id, req_data in list(active_requests.items()):
             if now - req_data['start_time'] > REQUEST_TIMEOUT:
-                logger.warning(f"⏰ Timeout untuk request {req_id}")
-                await edit_status_message(
-                    req_data['chat_id'],
-                    req_data['message_id'],
-                    "Request timeout. Silakan coba lagi."
-                )
-                # Hapus dari Redis
+                await edit_status(req_data['chat_id'], req_data['message_id'], 
+                                "Request timeout. Silakan coba lagi.")
                 try:
                     head = r.lindex('pending_requests', 0)
                     if head and head.decode('utf-8') == req_id:
                         r.lpop('pending_requests')
                     r.delete(req_id)
-                    logger.info(f"🗑️ Request {req_id} dihapus dari Redis karena timeout")
-                except Exception as e:
-                    logger.error(f"❌ Gagal hapus Redis saat timeout: {e}")
-                # Hapus dari waiting flag
+                except:
+                    pass
                 waiting_for_result.pop(req_data['chat_id'], None)
                 to_remove.append(req_id)
         for req_id in to_remove:
             active_requests.pop(req_id, None)
-            logger.info(f"🗑️ Request {req_id} dihapus dari active_requests karena timeout")
         await asyncio.sleep(1)
 
-# ==================== HANDLER PESAN DARI BOT A ====================
+# ==================== HANDLER ====================
 @events.register(events.NewMessage)
 async def message_handler(event):
     global captcha_timer_task, bot_status
 
-    message = event.message
-    chat_id = event.chat_id
-    sender_id = event.sender_id
-    text = message.text or message.message or ''
-
-    # Hanya pesan dari Bot A yang diproses
-    if chat_id != 7240340418 and sender_id != 7240340418:
+    msg = event.message
+    if msg.chat_id != 7240340418 and msg.sender_id != 7240340418:
         return
 
+    text = msg.text or msg.message or ''
     logger.info(f"📩 Dari Bot A: {text[:100]}")
 
-    # ========== 1. HASIL INFO (format dengan garis) ==========
+    # HASIL INFO
     if text.startswith('──────────────────────') and 'BIND ACCOUNT INFO' in text:
-        logger.info("✅ Mendapatkan hasil info dari Bot A")
-        
-        # Cek apakah ada request aktif
         if not active_requests:
-            logger.warning("❌ Tidak ada request aktif, hasil diabaikan")
             return
-
-        # Ambil request yang sedang aktif (hanya satu)
         req_id, req_info = next(iter(active_requests.items()))
-        user_id = req_info['chat_id']
-        message_id = req_info['message_id']
-        logger.info(f"📋 Request aktif ditemukan: {req_id} untuk user {user_id} dengan message_id {message_id}")
-
-        # Ekstrak data
-        id_match = re.search(r'ID:?\s*(\d+)', text)
-        server_match = re.search(r'Server:?\s*(\d+)', text)
-        android_match = re.search(r'Android:?\s*(\d+)', text)
-        ios_match = re.search(r'iOS:?\s*(\d+)', text)
-
-        uid = id_match.group(1) if id_match else 'Unknown'
-        sid = server_match.group(1) if server_match else 'Unknown'
-        android = android_match.group(1) if android_match else '0'
-        ios = ios_match.group(1) if ios_match else '0'
-
-        # Validasi via GoPay
+        
+        uid = re.search(r'ID:?\s*(\d+)', text)
+        sid = re.search(r'Server:?\s*(\d+)', text)
+        android = re.search(r'Android:?\s*(\d+)', text)
+        ios = re.search(r'iOS:?\s*(\d+)', text)
+        
+        uid = uid.group(1) if uid else 'Unknown'
+        sid = sid.group(1) if sid else 'Unknown'
+        android = android.group(1) if android else '0'
+        ios = ios.group(1) if ios else '0'
+        
         gopay = validate_mlbb_gopay_sync(uid, sid)
-        if gopay['status']:
-            nickname = gopay['username']
-            region = gopay['region']
-        else:
-            nickname = 'Tidak diketahui'
-            region = '🌍 Tidak diketahui'
-
-        # Format output
+        nickname = gopay['username'] if gopay['status'] else 'Tidak diketahui'
+        region = gopay['region'] if gopay['status'] else '🌍 Tidak diketahui'
+        
         output, markup = format_final_output(text, nickname, region, uid, sid, android, ios)
-
-        # Edit pesan status dengan hasil
-        await edit_status_message(user_id, message_id, output, markup)
-
-        # Bersihkan data dari memori
+        await edit_status(req_info['chat_id'], req_info['message_id'], output, markup)
+        
         try:
             del active_requests[req_id]
-            waiting_for_result.pop(user_id, None)
-            logger.info(f"✅ Request {req_id} dihapus dari active_requests")
-        except Exception as e:
-            logger.error(f"❌ Gagal hapus active_requests: {e}")
-
-        # Hapus dari Redis
+            waiting_for_result.pop(req_info['chat_id'], None)
+        except:
+            pass
+        
         try:
             head = r.lindex('pending_requests', 0)
             if head and head.decode('utf-8') == req_id:
                 r.lpop('pending_requests')
             r.delete(req_id)
-            logger.info(f"✅ Request {req_id} dihapus dari Redis")
-        except Exception as e:
-            logger.error(f"❌ Gagal hapus Redis: {e}")
-
+        except:
+            pass
+        
         cleanup_downloaded_photos()
         return
 
-    # ========== 2. VERIFIKASI SUKSES ==========
+    # VERIFIKASI SUKSES
     if 'verification successful' in text.lower() or '✅ Verifikasi berhasil!' in text:
-        logger.info("✅ Verifikasi sukses, auto-retry dalam 5 detik")
-
-        # Matikan timer captcha jika ada
         if captcha_timer_task:
             captcha_timer_task.cancel()
-            captcha_timer_task = None
         bot_status['in_captcha'] = False
-
-        # Auto-retry untuk request yang sedang aktif
         if active_requests:
             await asyncio.sleep(5)
             req_id, req_info = next(iter(active_requests.items()))
             cmd = f"{req_info['command']} {req_info['args'][0]} {req_info['args'][1]}"
             await client.send_message(BOT_A_USERNAME, cmd)
-            logger.info(f"🔄 Auto-retry: {cmd}")
-            # Update waktu mulai
             req_info['start_time'] = time.time()
-        else:
-            logger.warning("⚠️ Tidak ada request aktif untuk auto-retry")
         return
 
-    # ========== 3. CAPTCHA ==========
-    if (message.photo or 
-        'captcha' in text.lower() or 
-        re.search(r'\d{6}', text) or 
-        '🔒 Masukkan kode captcha' in text):
-        
-        logger.warning("🚫 CAPTCHA terdeteksi!")
+    # CAPTCHA
+    if (msg.photo or 'captcha' in text.lower() or '🔒 Masukkan kode captcha' in text):
+        logger.warning("🚫 CAPTCHA DETECTED!")
         bot_status['in_captcha'] = True
-
-        # Reset timeout untuk request yang sedang aktif (beri waktu lebih)
+        
         if active_requests:
-            for req_id, req_info in active_requests.items():
-                req_info['start_time'] = time.time()
-                logger.info(f"⏱️ Reset timeout untuk request {req_id} karena captcha")
-        else:
-            logger.warning("⚠️ Captcha terdeteksi tapi tidak ada request aktif")
-
-        # Batalkan timer sebelumnya jika ada
+            for r in active_requests.values():
+                r['start_time'] = time.time()
+        
         if captcha_timer_task:
             captcha_timer_task.cancel()
-
-        # Set timer untuk mematikan status captcha jika terlalu lama
-        async def reset_captcha():
+        
+        async def reset():
             await asyncio.sleep(CAPTCHA_TIMEOUT)
             bot_status['in_captcha'] = False
-            logger.info("Captcha timeout, status direset")
-        captcha_timer_task = asyncio.create_task(reset_captcha())
-
-        # Ambil kode captcha
-        captcha_code = None
-
-        # Cek di teks terlebih dahulu
+            logger.info("⏰ Captcha timeout")
+        captcha_timer_task = asyncio.create_task(reset())
+        
+        # Cek kode di teks dulu
+        kode = None
         digits = re.findall(r'\d', text)
         if len(digits) >= 6:
-            captcha_code = ''.join(digits[:6])
-            logger.info(f"🔑 Kode captcha dari teks: {captcha_code}")
-
-        # Jika tidak ada di teks dan ada foto, coba OCR dengan retry
-        if not captcha_code and message.photo:
-            for attempt in range(2):  # Coba maksimal 2 kali
-                try:
-                    logger.info(f"📸 Percobaan OCR ke-{attempt+1}")
-                    captcha_code = await read_number_from_photo_online(message)
-                    if captcha_code:
-                        logger.info(f"🔑 Kode captcha dari OCR (percobaan {attempt+1}): {captcha_code}")
-                        break
-                    else:
-                        logger.warning(f"OCR percobaan {attempt+1} gagal mendapatkan kode")
-                except Exception as e:
-                    logger.error(f"❌ OCR percobaan {attempt+1} error: {e}")
-                if attempt == 0:
-                    await asyncio.sleep(2)  # jeda sebelum retry
-
-        if captcha_code and len(captcha_code) == 6:
-            # Kirim verify ke Bot A
-            await client.send_message(BOT_A_USERNAME, f"/verify {captcha_code}")
+            kode = ''.join(digits[:6])
+            logger.info(f"🔑 Kode dari teks: {kode}")
+        
+        # OCR dengan Selenium
+        if not kode and msg.photo:
+            logger.info("📸 Memulai OCR dengan Selenium...")
+            kode = await read_captcha(msg)
+            if kode:
+                logger.info(f"✅ Kode dari Selenium: {kode}")
+                await asyncio.sleep(2)
+        
+        if kode and len(kode) == 6:
+            await client.send_message(BOT_A_USERNAME, f"/verify {kode}")
             logger.info("📤 Perintah verify dikirim")
         else:
-            logger.error("❌ Gagal mendapatkan kode captcha setelah 2 percobaan")
+            logger.error("❌ Gagal mendapatkan kode captcha")
             cleanup_downloaded_photos()
-
-            # Jika ada request aktif, batalkan sekarang juga
             if active_requests:
                 req_id, req_info = next(iter(active_requests.items()))
-                await edit_status_message(
-                    req_info['chat_id'],
-                    req_info['message_id'],
-                    "Gagal memproses request. Coba lagi."
-                )
-                # Hapus dari Redis
+                await edit_status(req_info['chat_id'], req_info['message_id'],
+                                "Gagal memproses request. Coba lagi.")
                 try:
                     head = r.lindex('pending_requests', 0)
                     if head and head.decode('utf-8') == req_id:
                         r.lpop('pending_requests')
                     r.delete(req_id)
-                    logger.info(f"🗑️ Request {req_id} dihapus dari Redis karena gagal captcha")
-                except Exception as e:
-                    logger.error(f"❌ Gagal hapus Redis: {e}")
-                # Hapus dari waiting flag
+                except:
+                    pass
                 waiting_for_result.pop(req_info['chat_id'], None)
                 del active_requests[req_id]
-                logger.info(f"🗑️ Request {req_id} dihapus dari active_requests karena gagal captcha")
-
-            # Reset status captcha lebih cepat
             bot_status['in_captcha'] = False
             if captcha_timer_task:
                 captcha_timer_task.cancel()
-                captcha_timer_task = None
 
-# ==================== PROSES ANTRIAN ====================
+# ==================== QUEUE ====================
 async def process_queue():
     logger.info("🔄 Queue processor started")
     while True:
@@ -885,42 +554,32 @@ async def process_queue():
                 if req_bytes:
                     req_id = req_bytes.decode('utf-8')
                     now = time.time()
-
-                    # Rate limit: jangan kirim terlalu cepat
+                    
                     if req_id in sent_requests and now - sent_requests[req_id] < 15:
                         await asyncio.sleep(2)
                         continue
-
+                    
                     req_json = r.get(req_id)
                     if not req_json:
-                        logger.warning(f"⚠️ Request {req_id} tidak ditemukan di Redis, dihapus dari antrian")
                         r.lpop('pending_requests')
                         continue
-
+                    
                     req_data = json.loads(req_json)
                     user_id = req_data['chat_id']
-                    # <-- PERUBAHAN KEDUA: baca reply_to_message_id jika ada -->
-                    reply_to_message_id = req_data.get('reply_to_message_id')  # None jika tidak ada
-                    logger.info(f"📋 Memproses request {req_id} dari user {user_id}" + (f" (reply ke {reply_to_message_id})" if reply_to_message_id else ""))
-
-                    # Jika user ini sedang menunggu hasil (misal dari request sebelumnya), tunda
-                    if waiting_for_result.get(user_id, False):
-                        logger.info(f"⏳ User {user_id} masih menunggu, pindahkan ke belakang")
+                    reply_id = req_data.get('reply_to_message_id')
+                    
+                    if waiting_for_result.get(user_id):
                         r.lpop('pending_requests')
                         r.rpush('pending_requests', req_id)
                         await asyncio.sleep(5)
                         continue
-
-                    # Kirim status "Sedang diproses" ke user, sebagai reply jika diperlukan
-                    status_text = "Proses request..."
-                    msg_id = await send_status_to_user(user_id, status_text, reply_to_message_id=reply_to_message_id)  # <-- gunakan reply_to_message_id
+                    
+                    msg_id = await send_status(user_id, "Proses request...", reply_id)
                     if not msg_id:
-                        logger.error(f"❌ Gagal mengirim status ke user {user_id}, request dibatalkan")
                         r.lpop('pending_requests')
                         r.delete(req_id)
                         continue
-
-                    # Simpan ke active_requests
+                    
                     active_requests[req_id] = {
                         'chat_id': user_id,
                         'message_id': msg_id,
@@ -928,26 +587,23 @@ async def process_queue():
                         'command': req_data['command'],
                         'args': req_data['args']
                     }
-                    logger.info(f"✅ Request {req_id} disimpan ke active_requests dengan message_id {msg_id}")
-
-                    # Kirim perintah ke Bot A
+                    
                     cmd = f"{req_data['command']} {req_data['args'][0]} {req_data['args'][1]}"
                     await client.send_message(BOT_A_USERNAME, cmd)
-                    logger.info(f"📤 Mengirim ke Bot A: {cmd}")
-
+                    
                     sent_requests[req_id] = now
                     waiting_for_result[user_id] = True
             else:
                 await asyncio.sleep(1)
         except Exception as e:
-            logger.error(f"❌ Error di process_queue: {e}")
+            logger.error(f"❌ Error queue: {e}")
         await asyncio.sleep(2)
 
 # ==================== MAIN ====================
 async def main():
-    logger.info("🚀 Memulai userbot...")
-
-    # Bersihkan queue lama di Redis
+    logger.info("🚀 Memulai userbot dengan Selenium OCR...")
+    
+    # Bersihkan queue lama
     try:
         queue_len = r.llen('pending_requests')
         if queue_len > 0:
@@ -958,22 +614,16 @@ async def main():
         if keys:
             for key in keys:
                 r.delete(key)
-                logger.info(f"🗑️ Menghapus key Redis: {key}")
     except Exception as e:
-        logger.error(f"❌ Gagal membersihkan Redis: {e}")
+        logger.error(f"❌ Gagal bersihkan Redis: {e}")
 
     try:
         await client.start()
         me = await client.get_me()
         logger.info(f"✅ Login sebagai: {me.first_name}")
-
-        # Daftarkan event handler
+        
         client.add_event_handler(message_handler)
-
-        # Jalankan timeout checker
         asyncio.create_task(timeout_checker())
-
-        # Jalankan pemrosesan antrian
         await process_queue()
     except Exception as e:
         logger.error(f"❌ Fatal error: {e}")
