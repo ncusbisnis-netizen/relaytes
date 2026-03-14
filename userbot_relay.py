@@ -309,6 +309,18 @@ captcha_timer_task = None
 REQUEST_TIMEOUT = 30
 CAPTCHA_TIMEOUT = 30
 
+# Fungsi cleanup sederhana
+def cleanup_downloaded_photos():
+    """Hapus file foto sementara"""
+    global downloaded_photos
+    for photo_path in downloaded_photos[:]:
+        try:
+            if os.path.exists(photo_path):
+                os.remove(photo_path)
+            downloaded_photos.remove(photo_path)
+        except:
+            pass
+            
 # ==================== FUNGSI BANTUAN ====================
 def clean_bind_text(text):
     """Bersihkan text bind info"""
@@ -427,15 +439,16 @@ def clean_bind_text(text):
 
 async def read_number_from_photo_online(message):
     """
-    OCR menggunakan vheer.com - Simple version untuk HP
+    OCR Vheer - VERSION RINGAN untuk Heroku
     """
-    from selenium import webdriver
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.chrome.options import Options
     import tempfile
     import os
     import asyncio
     import re
+    import requests
+    from selenium import webdriver
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.chrome.options import Options
     
     temp_file = None
     driver = None
@@ -446,41 +459,64 @@ async def read_number_from_photo_online(message):
         if not photo_data:
             return None
             
+        # Simpan temporary
         with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
             tmp.write(photo_data)
             temp_file = tmp.name
             downloaded_photos.append(temp_file)
         
-        # Setup Chrome simple
+        # Chrome options - MINIMALIS
         chrome_options = Options()
         chrome_options.add_argument('--headless=new')
         chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument('--window-size=800x600')
+        chrome_options.add_argument('--memory-pressure-off')
+        chrome_options.add_argument('--single-process')  # Penting untuk hemat memory
+        chrome_options.add_argument('--disable-features=VizDisplayCompositor')
         
+        # Start Chrome
         driver = webdriver.Chrome(options=chrome_options)
+        driver.set_page_load_timeout(30)
         
         # Buka Vheer
         driver.get("https://vheer.com/app/image-to-text")
-        await asyncio.sleep(3)
+        await asyncio.sleep(2)
         
         # Upload file
-        file_input = driver.find_element(By.CSS_SELECTOR, "input[type='file']")
+        try:
+            file_input = driver.find_element(By.CSS_SELECTOR, "input[type='file']")
+        except:
+            # Fallback: klik area upload
+            driver.execute_script("document.querySelector('input[type=file]').style.display='block';")
+            file_input = driver.find_element(By.CSS_SELECTOR, "input[type='file']")
+        
         file_input.send_keys(os.path.abspath(temp_file))
-        await asyncio.sleep(5)
+        await asyncio.sleep(5)  # Tunggu proses OCR
         
-        # Ambil teks
-        text = driver.find_element(By.TAG_NAME, "body").text
+        # Ambil teks dari halaman
+        page_text = driver.find_element(By.TAG_NAME, "body").text
         
-        # Cari 6 digit angka
-        match = re.search(r'(\d{6})', re.sub(r'[^0-9]', '', text))
-        return match.group(1) if match else None
-            
+        # Ekstrak 6 digit angka
+        numbers = re.findall(r'\d{6}', page_text)
+        if numbers:
+            # Ambil yang paling panjang/pertama
+            return numbers[0]
+        
+        return None
+        
     except Exception as e:
         logger.error(f"OCR error: {e}")
         return None
+        
     finally:
+        # Cleanup
         if driver:
-            driver.quit()
+            try:
+                driver.quit()
+            except:
+                pass
 
 def format_final_output(original_text, nickname, region, uid, sid, android, ios):
     """Format output final dengan penanganan Moonton empty yang benar"""
