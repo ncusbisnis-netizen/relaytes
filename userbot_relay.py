@@ -80,12 +80,8 @@ class VheerOCRSelenium:
         self.options.add_argument('--disable-dev-shm-usage')
         self.options.add_argument('--disable-gpu')
         self.options.add_argument('--window-size=1920,1080')
+        # Buildpack akan otomatis set path Firefox
         
-        # Set binary location untuk Heroku
-        firefox_bin = os.environ.get('FIREFOX_BIN', '/app/.apt/usr/bin/firefox')
-        if os.path.exists(firefox_bin):
-            self.options.binary_location = firefox_bin
-            
     def _extract_valid_angka(self, text: str) -> str:
         """Ekstrak angka 6 digit yang valid dari teks"""
         if not text:
@@ -98,6 +94,7 @@ class VheerOCRSelenium:
         fake_numbers = ['000000', '111111', '222222', '333333', '444444',
                        '555555', '666666', '777777', '888888', '999999', '123456']
         
+        # Prioritaskan angka yang bukan palsu
         for angka in candidates:
             if angka not in fake_numbers:
                 return angka
@@ -160,7 +157,7 @@ class VheerOCRSelenium:
                     driver.execute_script("arguments[0].click();", tombol)
                     logger.info("✅ Tombol diklik")
                 else:
-                    logger.warning("⚠️ Tombol tidak ditemukan")
+                    logger.warning("⚠️ Tombol tidak ditemukan, mungkin langsung proses")
                     
             except Exception as e:
                 logger.warning(f"⚠️ Gagal klik tombol: {e}")
