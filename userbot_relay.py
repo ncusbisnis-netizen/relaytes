@@ -309,18 +309,6 @@ captcha_timer_task = None
 REQUEST_TIMEOUT = 30
 CAPTCHA_TIMEOUT = 30
 
-# Fungsi cleanup sederhana
-def cleanup_downloaded_photos():
-    """Hapus file foto sementara"""
-    global downloaded_photos
-    for photo_path in downloaded_photos[:]:
-        try:
-            if os.path.exists(photo_path):
-                os.remove(photo_path)
-            downloaded_photos.remove(photo_path)
-        except:
-            pass
-            
 # ==================== FUNGSI BANTUAN ====================
 def clean_bind_text(text):
     """Bersihkan text bind info"""
@@ -438,85 +426,52 @@ def clean_bind_text(text):
     return text
 
 async def read_number_from_photo_online(message):
-    """
-    OCR Vheer - VERSION RINGAN untuk Heroku
-    """
-    import tempfile
-    import os
-    import asyncio
-    import re
-    import requests
-    from selenium import webdriver
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.chrome.options import Options
-    
-    temp_file = None
-    driver = None
-    
+    """OCR menggunakan ocr.space dengan timeout 60 detik"""
     try:
-        # Download foto
-        photo_data = await message.download_media(bytes)
-        if not photo_data:
+        if not OCR_SPACE_API_KEY:
             return None
-            
-        # Simpan temporary
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
-            tmp.write(photo_data)
-            temp_file = tmp.name
-            downloaded_photos.append(temp_file)
         
-        # Chrome options - MINIMALIS
-        chrome_options = Options()
-        chrome_options.add_argument('--headless=new')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--window-size=800x600')
-        chrome_options.add_argument('--memory-pressure-off')
-        chrome_options.add_argument('--single-process')  # Penting untuk hemat memory
-        chrome_options.add_argument('--disable-features=VizDisplayCompositor')
+        logger.info("📸 Downloading captcha photo...")
+        photo_path = await message.download_media()
+        downloaded_photos.append(photo_path)
         
-        # Start Chrome
-        driver = webdriver.Chrome(options=chrome_options)
-        driver.set_page_load_timeout(30)
+        with open(photo_path, 'rb') as f:
+            image_data = base64.b64encode(f.read()).decode('utf-8')
         
-        # Buka Vheer
-        driver.get("https://vheer.com/app/image-to-text")
-        await asyncio.sleep(2)
+        response = requests.post(
+            'https://api.ocr.space/parse/image',
+            data={
+                'base64Image': f'data:image/jpeg;base64,{image_data}',
+                'apikey': OCR_SPACE_API_KEY,
+                'language': 'eng',
+                'OCREngine': '2'
+            },
+            timeout=60
+        )
         
-        # Upload file
-        try:
-            file_input = driver.find_element(By.CSS_SELECTOR, "input[type='file']")
-        except:
-            # Fallback: klik area upload
-            driver.execute_script("document.querySelector('input[type=file]').style.display='block';")
-            file_input = driver.find_element(By.CSS_SELECTOR, "input[type='file']")
-        
-        file_input.send_keys(os.path.abspath(temp_file))
-        await asyncio.sleep(5)  # Tunggu proses OCR
-        
-        # Ambil teks dari halaman
-        page_text = driver.find_element(By.TAG_NAME, "body").text
-        
-        # Ekstrak 6 digit angka
-        numbers = re.findall(r'\d{6}', page_text)
-        if numbers:
-            # Ambil yang paling panjang/pertama
-            return numbers[0]
-        
+        if response.status_code == 200:
+            result = response.json()
+            if not result.get('IsErroredOnProcessing'):
+                text = result.get('ParsedResults', [{}])[0].get('ParsedText', '')
+                text = re.sub(r'[^0-9]', '', text)
+                match = re.search(r'(\d{6})', text)
+                if match:
+                    return match.group(1)
         return None
-        
     except Exception as e:
-        logger.error(f"OCR error: {e}")
+        logger.error(f"❌ OCR error: {e}")
         return None
-        
-    finally:
-        # Cleanup
-        if driver:
-            try:
-                driver.quit()
-            except:
-                pass
+
+def cleanup_downloaded_photos():
+    """Hapus file foto sementara"""
+    global downloaded_photos
+    for photo_path in downloaded_photos[:]:
+        try:
+            if os.path.exists(photo_path):
+                os.remove(photo_path)
+            downloaded_photos.remove(photo_path)
+        except:
+            pass
 
 def format_final_output(original_text, nickname, region, uid, sid, android, ios):
     """Format output final dengan penanganan Moonton empty yang benar"""
