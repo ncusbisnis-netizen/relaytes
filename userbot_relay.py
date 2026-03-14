@@ -18,35 +18,21 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# ==================== KONFIGURASI ====================
+# ==================== CONFIG ====================
 
-API_ID = int(os.environ.get('API_ID', 0))
-API_HASH = os.environ.get('API_HASH', '')
-SESSION_STRING = os.environ.get('SESSION_STRING', '')
-BOT_B_TOKEN = os.environ.get('BOT_B_TOKEN', '')
-BOT_A_USERNAME = 'bengkelmlbb_bot'
+API_ID = int(os.environ.get("API_ID", 0))
+API_HASH = os.environ.get("API_HASH", "")
+SESSION_STRING = os.environ.get("SESSION_STRING", "")
 
-REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
+BOT_B_TOKEN = os.environ.get("BOT_B_TOKEN", "")
+BOT_A_USERNAME = "bengkelmlbb_bot"
 
-STOK_ADMIN_URL = os.environ.get(
-    'STOK_ADMIN_URL',
-    'https://whatsapp.com/channel/0029VbA4PrD5fM5TMgECoE1E'
-)
-
-# ==================== COUNTRY ====================
-
-country_mapping = {
-    'ID': '🇮🇩 Indonesia',
-    'MY': '🇲🇾 Malaysia',
-    'SG': '🇸🇬 Singapore',
-    'PH': '🇵🇭 Philippines',
-    'TH': '🇹🇭 Thailand',
-}
+REDIS_URL = os.environ.get("REDIS_URL")
 
 # ==================== VALIDASI ====================
 
 if not all([API_ID, API_HASH, SESSION_STRING, BOT_B_TOKEN, REDIS_URL]):
-    logger.error("❌ Missing ENV")
+    logger.error("❌ ENV belum lengkap")
     exit(1)
 
 # ==================== REDIS ====================
@@ -65,7 +51,7 @@ client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 # ==================== GLOBAL ====================
 
-bot_status = {'in_captcha': False}
+bot_status = {"in_captcha": False}
 
 sent_requests = {}
 waiting_for_result = {}
@@ -73,14 +59,9 @@ waiting_for_result = {}
 downloaded_photos = []
 active_requests = {}
 
-captcha_timer_task = None
-
-REQUEST_TIMEOUT = 30
-CAPTCHA_TIMEOUT = 30
-
 # ==================== OCR VHEER ====================
 
-def parse_vheer_response(text):
+def parse_vheer(text):
 
     try:
 
@@ -94,42 +75,55 @@ def parse_vheer_response(text):
 
                 captcha = data["paragraphs"][0]["text"]
 
-                numbers = re.findall(r'\d{6}', captcha)
+                angka = re.findall(r"\d{6}", captcha)
 
-                if numbers:
-                    return numbers[0]
+                if angka:
+                    return angka[0]
 
         return None
 
     except Exception as e:
+
         logger.error(f"OCR parse error {e}")
+
         return None
 
 
-def solve_captcha_vheer(image_path):
+def solve_vheer(image_path):
 
     try:
 
         logger.info("📤 Upload ke Vheer")
 
-        files = {
-            "file": open(image_path, "rb")
-        }
+        with open(image_path, "rb") as f:
 
-        res = requests.post(
-            "https://vheer.com/api/ocr",
-            files=files,
-            timeout=30
-        )
+            files = {
+                "file": ("captcha.jpg", f, "image/jpeg")
+            }
+
+            headers = {
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "*/*"
+            }
+
+            res = requests.post(
+                "https://vheer.com/app/api/image-to-text",
+                files=files,
+                headers=headers,
+                timeout=30
+            )
+
+        logger.info(f"📡 HTTP {res.status_code}")
 
         if res.status_code != 200:
-            logger.error("❌ OCR HTTP error")
             return None
 
-        return parse_vheer_response(res.text)
+        return parse_vheer(res.text)
 
     except Exception as e:
-        logger.error(f"❌ OCR error {e}")
+
+        logger.error(f"OCR error {e}")
+
         return None
 
 
@@ -145,22 +139,33 @@ async def read_captcha(message):
 
         loop = asyncio.get_event_loop()
 
-        result = await loop.run_in_executor(
-            None,
-            solve_captcha_vheer,
-            path
-        )
+        for i in range(3):
 
-        return result
+            logger.info(f"OCR attempt {i+1}")
+
+            result = await loop.run_in_executor(
+                None,
+                solve_vheer,
+                path
+            )
+
+            if result:
+                return result
+
+            await asyncio.sleep(2)
+
+        return None
 
     except Exception as e:
-        logger.error(f"❌ captcha read error {e}")
+
+        logger.error(f"captcha error {e}")
+
         return None
 
 
 # ==================== CLEANUP ====================
 
-def cleanup_downloaded_photos():
+def cleanup_photos():
 
     global downloaded_photos
 
@@ -180,79 +185,26 @@ def cleanup_downloaded_photos():
             pass
 
 
-# ==================== BOT API ====================
-
-async def send_status(chat_id, text, reply_to=None, markup=None):
-
-    url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
-
-    data = {
-        "chat_id": chat_id,
-        "text": text
-    }
-
-    if reply_to:
-        data["reply_to_message_id"] = reply_to
-
-    if markup:
-        data["reply_markup"] = json.dumps(markup)
-
-    try:
-
-        r = requests.post(url, json=data)
-
-        if r.status_code == 200:
-
-            return r.json()["result"]["message_id"]
-
-    except:
-        pass
-
-    return None
-
-
-async def edit_status(chat_id, msg_id, text, markup=None):
-
-    url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/editMessageText"
-
-    data = {
-        "chat_id": chat_id,
-        "message_id": msg_id,
-        "text": text
-    }
-
-    if markup:
-        data["reply_markup"] = json.dumps(markup)
-
-    try:
-
-        requests.post(url, json=data)
-
-    except:
-        pass
-
-
 # ==================== CAPTCHA HANDLER ====================
 
 @events.register(events.NewMessage)
 
 async def message_handler(event):
 
-    global captcha_timer_task
     global bot_status
 
     msg = event.message
 
+    text = msg.text or msg.message or ""
+
     if msg.chat_id != 7240340418 and msg.sender_id != 7240340418:
         return
 
-    text = msg.text or msg.message or ''
-
     logger.info(f"📩 Dari Bot A: {text[:80]}")
 
-    # ================= CAPTCHA =================
+    # CAPTCHA
 
-    if (msg.photo or "captcha" in text.lower()):
+    if msg.photo or "captcha" in text.lower() or "🔒" in text:
 
         logger.warning("🚫 CAPTCHA DETECTED")
 
@@ -260,31 +212,33 @@ async def message_handler(event):
 
         kode = None
 
-        digits = re.findall(r'\d', text)
+        digits = re.findall(r"\d", text)
 
         if len(digits) >= 6:
             kode = "".join(digits[:6])
 
         if not kode and msg.photo:
 
-            logger.info("📸 OCR VHEER START")
+            logger.info("📸 OCR START")
 
             kode = await read_captcha(msg)
 
         if kode and len(kode) == 6:
+
+            logger.info(f"✅ CAPTCHA {kode}")
 
             await client.send_message(
                 BOT_A_USERNAME,
                 f"/verify {kode}"
             )
 
-            logger.info(f"✅ CAPTCHA {kode}")
+            await asyncio.sleep(5)
 
         else:
 
             logger.error("❌ OCR gagal")
 
-        cleanup_downloaded_photos()
+        cleanup_photos()
 
         bot_status["in_captcha"] = False
 
@@ -293,36 +247,40 @@ async def message_handler(event):
 
 async def process_queue():
 
-    logger.info("🔄 Queue start")
+    logger.info("🔄 Queue started")
 
     while True:
 
         try:
 
-            if not bot_status["in_captcha"]:
+            if bot_status["in_captcha"]:
+                await asyncio.sleep(2)
+                continue
 
-                req = r.lindex("pending_requests", 0)
+            req = r.lindex("pending_requests", 0)
 
-                if req:
+            if req:
 
-                    req_id = req.decode()
+                req_id = req.decode()
 
-                    data = r.get(req_id)
+                data = r.get(req_id)
 
-                    if not data:
-                        r.lpop("pending_requests")
-                        continue
+                if not data:
+                    r.lpop("pending_requests")
+                    continue
 
-                    req_data = json.loads(data)
+                req_data = json.loads(data)
 
-                    cmd = f"{req_data['command']} {req_data['args'][0]} {req_data['args'][1]}"
+                cmd = f"{req_data['command']} {req_data['args'][0]} {req_data['args'][1]}"
 
-                    await client.send_message(
-                        BOT_A_USERNAME,
-                        cmd
-                    )
+                logger.info(f"📤 send {cmd}")
 
-                    logger.info(f"📤 send {cmd}")
+                await client.send_message(
+                    BOT_A_USERNAME,
+                    cmd
+                )
+
+                await asyncio.sleep(3)
 
         except Exception as e:
 
@@ -335,7 +293,7 @@ async def process_queue():
 
 async def main():
 
-    logger.info("🚀 START USERBOT")
+    logger.info("🚀 START BOT")
 
     await client.start()
 
