@@ -446,7 +446,7 @@ async def read_number_from_photo_online(message):
                 'language': 'eng',
                 'OCREngine': '2'
             },
-            timeout=60
+            timeout=180
         )
         
         if response.status_code == 200:
