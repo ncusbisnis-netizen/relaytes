@@ -1,4 +1,3 @@
-
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 import redis
@@ -10,8 +9,6 @@ import logging
 import json
 import requests
 import base64
-
-from PIL import Image
 
 # Setup logging
 logging.basicConfig(
@@ -429,46 +426,29 @@ def clean_bind_text(text):
     return text
 
 async def read_number_from_photo_online(message):
-    """OCR menggunakan ocr.space dengan kompresi gambar dan timeout panjang"""
+    """OCR menggunakan ocr.space dengan timeout 60 detik"""
     try:
         if not OCR_SPACE_API_KEY:
             return None
-
+        
         logger.info("📸 Downloading captcha photo...")
         photo_path = await message.download_media()
         downloaded_photos.append(photo_path)
-
-        # === KOMPRESI GAMBAR ===
-        img = Image.open(photo_path)
-        # Resize agar lebar maksimal 800px (percepat upload)
-        max_width = 800
-        if img.width > max_width:
-            ratio = max_width / img.width
-            new_size = (max_width, int(img.height * ratio))
-            img = img.resize(new_size, Image.LANCZOS)
-
-        # Simpan sementara sebagai JPEG dengan kualitas 85%
-        temp_path = photo_path + ".compressed.jpg"
-        img.save(temp_path, "JPEG", quality=85, optimize=True)
-        downloaded_photos.append(temp_path)  # agar nanti dibersihkan
-
-        # === UPLOAD KE OCR.SPACE ===
-        with open(temp_path, 'rb') as f:
-            files = {'file': f}
-            data = {
+        
+        with open(photo_path, 'rb') as f:
+            image_data = base64.b64encode(f.read()).decode('utf-8')
+        
+        response = requests.post(
+            'https://api.ocr.space/parse/image',
+            data={
+                'base64Image': f'data:image/jpeg;base64,{image_data}',
                 'apikey': OCR_SPACE_API_KEY,
                 'language': 'eng',
                 'OCREngine': '2'
-            }
-
-            session = requests.Session()
-            response = session.post(
-                'https://api.ocr.space/parse/image',
-                files=files,
-                data=data,
-                timeout=(10, 180)  # (connect timeout, read timeout)
-            )
-
+            },
+            timeout=60
+        )
+        
         if response.status_code == 200:
             result = response.json()
             if not result.get('IsErroredOnProcessing'):
