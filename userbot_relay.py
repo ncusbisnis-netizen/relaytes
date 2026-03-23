@@ -432,7 +432,7 @@ def validate_mlbb_gopay_sync(user_id, server_id):
         data = result['data']
         username = data.get('username', 'Unknown').replace('+', ' ')
         country = data.get('countryOrigin', 'ID').upper()
-        region = country_mapping.get(country, country_mapping['DEFAULT'])
+        region = country_mapping.get(country, f'🌍 {country}')
         
         logger.info(f"✅ GoPay SUCCESS: {username} - {region}")
         
