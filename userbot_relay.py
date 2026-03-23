@@ -221,29 +221,19 @@ def validate_mlbb_gopay_sync(user_id, server_id):
         return {'status': False, 'message': str(e)}
 
 async def read_number_from_photo_online(message):
-    """OCR menggunakan vheer.com untuk membaca captcha"""
-    photo_path = None
     try:
-        # Download foto
         photo_path = await message.download_media()
-        if not photo_path:
-            logger.error("❌ Gagal download foto")
-            return None
-            
         downloaded_photos.append(photo_path)
-        logger.info(f"📸 Foto terdownload: {photo_path}")
 
-        # Baca file sebagai base64
         with open(photo_path, "rb") as f:
             base64_image = base64.b64encode(f.read()).decode("utf-8")
 
         base64_data = f"data:image/jpeg;base64,{base64_image}"
 
-        # Header untuk request ke vheer
         boundary = f"----WebKitFormBoundary{uuid.uuid4().hex}"
         headers = {
             "accept": "text/x-component",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "user-agent": "Mozilla/5.0",
             "referer": "https://vheer.com/app/image-to-text",
             "next-action": "99625e5ddd7496b07a3d1bef68618b3c0dea0807",
             "next-router-state-tree": "%5B%22%22%2C%7B%22children%22%3A%5B%22app%22%2C%7B%22children%22%3A%5B%22image-to-text%22%2C%7B%22children%22%3A%5B%22__PAGE__%22%2C%7B%7D%2C%22%2Fapp%2Fimage-to-text%22%2C%22refresh%22%5D%7D%5D%7D%5D%7D%2Cnull%2Cnull%2Ctrue%5D",
@@ -255,22 +245,18 @@ async def read_number_from_photo_online(message):
             
             def add_field(name, value):
                 parts.append(f"--{boundary}")
-                parts.append(f'Content-Disposition: form-data; name="{name}"')
-                parts.append("")
+                parts.append(f'Content-Disposition: form-data; name="{name}"\r\n')
                 parts.append(value)
 
             add_field("1_imageBase64", base64_data)
             add_field("1_languageIndex", "ENG")
             add_field("0", f'["$K1","{uuid.uuid4().hex[:10]}"]')
 
-            parts.append(f"--{boundary}--")
-            parts.append("")
+            parts.append(f"--{boundary}--\r\n")
             return "\r\n".join(parts)
 
         body = build_form()
 
-        # Kirim request ke vheer
-        logger.info("📤 Mengirim request OCR ke vheer.com...")
         response = requests.post(
             "https://vheer.com/app/image-to-text",
             data=body.encode(),
@@ -278,63 +264,37 @@ async def read_number_from_photo_online(message):
             timeout=60
         )
 
-        logger.info(f"📥 OCR Response status: {response.status_code}")
-
         if response.status_code == 200:
             try:
-                # Parse response
-                raw_text = response.text
-                lines = raw_text.split('\n')
-                
-                if len(lines) >= 2:
-                    # Ambil baris kedua yang berisi JSON
-                    json_str = lines[1]
-                    if json_str.startswith('[]'):
-                        json_str = json_str[2:]  # Hapus prefix '[]'
-                    
-                    parsed = json.loads(json_str)
-                    
-                    # Ekstrak teks dari response
-                    if isinstance(parsed, dict):
-                        ocr_text = parsed.get('text', '')
-                    elif isinstance(parsed, list) and len(parsed) > 0:
-                        ocr_text = parsed[0].get('text', '') if isinstance(parsed[0], dict) else str(parsed[0])
-                    else:
-                        ocr_text = str(parsed)
-                    
-                    logger.info(f"📝 OCR Result: {ocr_text}")
-                    
-                    # Cari 6 digit angka
-                    numbers = re.findall(r'\d', ocr_text)
-                    if len(numbers) >= 6:
-                        captcha = ''.join(numbers[:6])
-                        logger.info(f"🔑 Captcha ditemukan: {captcha}")
-                        return captcha
-                    else:
-                        logger.warning(f"⚠️ Tidak ditemukan 6 digit angka, hanya {len(numbers)} digit")
-                        
-            except json.JSONDecodeError as e:
-                logger.error(f"❌ JSON Parse error: {e}")
-                logger.debug(f"Raw response: {raw_text[:500]}")
+                raw = response.text.split("\n")[1]
+                parsed = json.loads(raw[2:])
+
+                text = parsed.get("text", "")
+                text = re.sub(r'[^0-9]', '', text)
+
+                match = re.search(r'(\d{6})', text)
+                if match:
+                    return match.group(1)
+
             except Exception as e:
                 logger.error(f"❌ Parse error: {e}")
-        else:
-            logger.error(f"❌ OCR HTTP Error: {response.status_code}")
-            
+
         return None
 
     except Exception as e:
         logger.error(f"❌ OCR error: {e}")
         return None
-    finally:
-        # Cleanup file
-        if photo_path and os.path.exists(photo_path):
-            try:
+
+def cleanup_downloaded_photos():
+    """Hapus file foto sementara"""
+    global downloaded_photos
+    for photo_path in downloaded_photos[:]:
+        try:
+            if os.path.exists(photo_path):
                 os.remove(photo_path)
-                if photo_path in downloaded_photos:
-                    downloaded_photos.remove(photo_path)
-            except:
-                pass
+            downloaded_photos.remove(photo_path)
+        except:
+            pass
 
 def cleanup_downloaded_photos():
     """Hapus semua file foto sementara"""
@@ -687,7 +647,7 @@ async def message_handler(event):
             req_info['start_time'] = time.time()
         return
 
-    # CAPTCHA - DIPERBAIKI DENGAN OCR MAKSIMAL
+    # ========== 3. CAPTCHA ==========
     if (message.photo or 
         'captcha' in text.lower() or 
         re.search(r'\d{6}', text) or 
@@ -696,86 +656,81 @@ async def message_handler(event):
         logger.warning("🚫 CAPTCHA terdeteksi!")
         bot_status['in_captcha'] = True
 
-        # Reset timeout untuk request yang sedang aktif
+        # Reset timeout untuk request yang sedang aktif (beri waktu lebih)
         if active_requests:
             for req_id, req_info in active_requests.items():
                 req_info['start_time'] = time.time()
-                logger.info(f"⏱️ Reset timeout untuk request {req_id}")
+                logger.info(f"⏱️ Reset timeout untuk request {req_id} karena captcha")
+        else:
+            logger.warning("⚠️ Captcha terdeteksi tapi tidak ada request aktif")
 
-        # Batalkan timer sebelumnya
+        # Batalkan timer sebelumnya jika ada
         if captcha_timer_task:
             captcha_timer_task.cancel()
 
-        # Set timer reset captcha
+        # Set timer untuk mematikan status captcha jika terlalu lama
         async def reset_captcha():
             await asyncio.sleep(CAPTCHA_TIMEOUT)
             bot_status['in_captcha'] = False
             logger.info("Captcha timeout, status direset")
         captcha_timer_task = asyncio.create_task(reset_captcha())
 
+        # Ambil kode captcha
         captcha_code = None
 
-        # 1. Cek dari teks terlebih dahulu
+        # Cek di teks terlebih dahulu
         digits = re.findall(r'\d', text)
         if len(digits) >= 6:
             captcha_code = ''.join(digits[:6])
             logger.info(f"🔑 Kode captcha dari teks: {captcha_code}")
 
-        # 2. Jika tidak ada di teks dan ada foto, coba OCR
+        # Jika tidak ada di teks dan ada foto, coba OCR dengan retry
         if not captcha_code and message.photo:
-            logger.info("📸 Mencoba OCR dengan vheer.com...")
-            
-            # Coba maksimal 3 kali dengan jeda
-            for attempt in range(3):
+            for attempt in range(2):  # Coba maksimal 2 kali
                 try:
-                    logger.info(f"📸 Percobaan OCR ke-{attempt+1}/3")
+                    logger.info(f"📸 Percobaan OCR ke-{attempt+1}")
                     captcha_code = await read_number_from_photo_online(message)
-                    
-                    if captcha_code and len(captcha_code) == 6:
-                        logger.info(f"✅ OCR berhasil: {captcha_code}")
+                    if captcha_code:
+                        logger.info(f"🔑 Kode captcha dari OCR (percobaan {attempt+1}): {captcha_code}")
                         break
                     else:
-                        logger.warning(f"⚠️ OCR percobaan {attempt+1} gagal")
-                        
+                        logger.warning(f"OCR percobaan {attempt+1} gagal mendapatkan kode")
                 except Exception as e:
-                    logger.error(f"❌ OCR error attempt {attempt+1}: {e}")
-                    
-                if attempt < 2:  # Jeda antar percobaan
-                    logger.info("⏳ Menunggu 3 detik sebelum retry...")
-                    await asyncio.sleep(3)
-            
-            # Bersihkan file foto setelah OCR
+                    logger.error(f"❌ OCR percobaan {attempt+1} error: {e}")
+                if attempt == 0:
+                    await asyncio.sleep(2)  # jeda sebelum retry
+
+        if captcha_code and len(captcha_code) == 6:
+            # Kirim verify ke Bot A
+            await client.send_message(BOT_A_USERNAME, f"/verify {captcha_code}")
+            logger.info("📤 Perintah verify dikirim")
+        else:
+            logger.error("❌ Gagal mendapatkan kode captcha setelah 2 percobaan")
             cleanup_downloaded_photos()
 
-        # 3. Kirim captcha jika berhasil
-        if captcha_code and len(captcha_code) == 6:
-            await client.send_message(BOT_A_USERNAME, f"/verify {captcha_code}")
-            logger.info(f"📤 Perintah verify {captcha_code} dikirim")
-        else:
-            logger.error("❌ Gagal mendapatkan kode captcha setelah 3 percobaan")
-            
-            # Jika ada request aktif, batalkan
+            # Jika ada request aktif, batalkan sekarang juga
             if active_requests:
                 req_id, req_info = next(iter(active_requests.items()))
                 await edit_status_message(
                     req_info['chat_id'],
                     req_info['message_id'],
-                    "Gagal memproses request karena captcha tidak terbaca. Coba lagi nanti."
+                    "Gagal memproses request. Coba lagi."
                 )
-                
+                # Hapus dari Redis
                 try:
                     head = r.lindex('pending_requests', 0)
                     if head and head.decode('utf-8') == req_id:
                         r.lpop('pending_requests')
                     r.delete(req_id)
+                    logger.info(f"🗑️ Request {req_id} dihapus dari Redis karena gagal captcha")
                 except Exception as e:
                     logger.error(f"❌ Gagal hapus Redis: {e}")
-                    
+                # Hapus dari waiting flag
                 waiting_for_result.pop(req_info['chat_id'], None)
                 del active_requests[req_id]
-                logger.info(f"🗑️ Request {req_id} dihapus karena gagal captcha")
+                logger.info(f"🗑️ Request {req_id} dihapus dari active_requests karena gagal captcha")
 
-            # Reset status captcha
+            # Reset status captcha lebih cepat
             bot_status['in_captcha'] = False
             if captcha_timer_task:
                 captcha_timer_task.cancel()
@@ -826,59 +781,40 @@ async def auto_redeem_handler(event):
     await process_voucher_codes(codes, message.id)
 
 # ==================== PROSES ANTRIAN ====================
-async def process_queue():
-    logger.info("🔄 Queue processor started")
-    while True:
-        try:
-            if not bot_status['in_captcha']:
-                req_bytes = r.lindex('pending_requests', 0)
-                if req_bytes:
-                    req_id = req_bytes.decode('utf-8')
-                    now = time.time()
+async def main():
+    logger.info("🚀 Memulai userbot...")
 
-                    if req_id in sent_requests and now - sent_requests[req_id] < 15:
-                        await asyncio.sleep(2)
-                        continue
+    # Bersihkan queue lama di Redis
+    try:
+        queue_len = r.llen('pending_requests')
+        if queue_len > 0:
+            logger.info(f"🧹 Membersihkan {queue_len} request lama...")
+            for _ in range(queue_len):
+                r.lpop('pending_requests')
+        keys = r.keys('req:*')
+        if keys:
+            for key in keys:
+                r.delete(key)
+                logger.info(f"🗑️ Menghapus key Redis: {key}")
+    except Exception as e:
+        logger.error(f"❌ Gagal membersihkan Redis: {e}")
 
-                    req_json = r.get(req_id)
-                    if not req_json:
-                        r.lpop('pending_requests')
-                        continue
+    try:
+        await client.start()
+        me = await client.get_me()
+        logger.info(f"✅ Login sebagai: {me.first_name}")
 
-                    req_data = json.loads(req_json)
-                    user_id = req_data['chat_id']
-                    reply_to_message_id = req_data.get('reply_to_message_id')
+        # Daftarkan event handler
+        client.add_event_handler(message_handler)
 
-                    if waiting_for_result.get(user_id, False):
-                        r.lpop('pending_requests')
-                        r.rpush('pending_requests', req_id)
-                        await asyncio.sleep(5)
-                        continue
+        # Jalankan timeout checker
+        asyncio.create_task(timeout_checker())
 
-                    msg_id = await send_status_to_user(user_id, "Proses request...", reply_to_message_id)
-                    if not msg_id:
-                        r.lpop('pending_requests')
-                        r.delete(req_id)
-                        continue
-
-                    active_requests[req_id] = {
-                        'chat_id': user_id,
-                        'message_id': msg_id,
-                        'start_time': now,
-                        'command': req_data['command'],
-                        'args': req_data['args']
-                    }
-
-                    cmd = f"{req_data['command']} {req_data['args'][0]} {req_data['args'][1]}"
-                    await client.send_message(BOT_A_USERNAME, cmd)
-
-                    sent_requests[req_id] = now
-                    waiting_for_result[user_id] = True
-            else:
-                await asyncio.sleep(1)
-        except Exception as e:
-            logger.error(f"❌ Error di process_queue: {e}")
-        await asyncio.sleep(2)
+        # Jalankan pemrosesan antrian
+        await process_queue()
+    except Exception as e:
+        logger.error(f"❌ Fatal error: {e}")
+        raise
 
 # ==================== MAIN ====================
 async def main():
