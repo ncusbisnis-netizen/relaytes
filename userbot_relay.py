@@ -29,7 +29,7 @@ STOK_ADMIN_URL = os.environ.get('STOK_ADMIN_URL', 'https://whatsapp.com/channel/
 
 # ==================== AUTO REDEEM CONFIG ====================
 AUTO_REDEEM_ENABLED = os.environ.get('AUTO_REDEEM_ENABLED', 'true').lower() == 'true'
-AUTO_REDEEM_CHANNEL = os.environ.get('AUTO_REDEEM_CHANNEL', 'redeemtest')
+AUTO_REDEEM_CHANNEL = os.environ.get('AUTO_REDEEM_CHANNEL', 'bengkelmlbb_info')
 REDEEM_DELAY = int(os.environ.get('REDEEM_DELAY', '0'))
 
 # ==================== COUNTRY MAPPING SEDERHANA ====================
