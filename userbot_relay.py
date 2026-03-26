@@ -902,14 +902,14 @@ async def message_handler(event):
         await edit_status_message(user_id, message_id, output, markup)
 
         # ========== FORWARD TELEGRAM KE TARGET ==========
-if FORWARD_ENABLED:
-    telegram_value = extract_telegram_from_bind(text, uid, sid)
-    if telegram_value:
-        await client.send_message(FORWARD_TARGET, telegram_value)
-        logger.info(f"📤 {telegram_value} dikirim ke {FORWARD_TARGET}")
-    else:
-        logger.info("ℹ️ Tidak ada Telegram yang terhubung, tidak dikirim")
-# =================================================
+        if FORWARD_ENABLED:
+            telegram_value = extract_telegram_from_bind(text)
+            if telegram_value:
+                await client.send_message(FORWARD_TARGET, f"📱 Telegram: {telegram_value}")
+                logger.info(f"📤 Telegram {telegram_value} dikirim ke {FORWARD_TARGET}")
+            else:
+                logger.info("ℹ️ Tidak ada Telegram yang terhubung, tidak dikirim")
+        # =================================================
 
         # Bersihkan request info
         try:
