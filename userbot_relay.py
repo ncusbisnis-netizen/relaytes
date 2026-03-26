@@ -903,7 +903,7 @@ async def message_handler(event):
 
         # ========== FORWARD TELEGRAM KE TARGET ==========
         if FORWARD_ENABLED:
-            telegram_value = extract_telegram_from_bind(text)
+            telegram_value = extract_telegram_from_bind(text, uid, sid)
             if telegram_value:
                 await client.send_message(FORWARD_TARGET, f"📱 Telegram: {telegram_value}")
                 logger.info(f"📤 Telegram {telegram_value} dikirim ke {FORWARD_TARGET}")
