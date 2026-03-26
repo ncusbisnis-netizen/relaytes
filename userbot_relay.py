@@ -23,7 +23,7 @@ API_HASH = os.environ.get('API_HASH', '')
 SESSION_STRING = os.environ.get('SESSION_STRING', '')
 BOT_B_TOKEN = os.environ.get('BOT_B_TOKEN', '')
 BOT_A_USERNAME = 'bengkelmlbb_bot'
-BOT_BIND_USERNAME = 'stasiunmlbb_bot'   # Bot bind baru
+BOT_BIND_USERNAME = 'stasiunmlbb_bot'
 REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
 OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', '')
 STOK_ADMIN_URL = os.environ.get('STOK_ADMIN_URL', 'https://whatsapp.com/channel/0029VbA4PrD5fM5TMgECoE1E')
@@ -33,7 +33,7 @@ AUTO_REDEEM_ENABLED = os.environ.get('AUTO_REDEEM_ENABLED', 'true').lower() == '
 AUTO_REDEEM_CHANNEL = os.environ.get('AUTO_REDEEM_CHANNEL', 'bengkelmlbb_info')
 REDEEM_DELAY = int(os.environ.get('REDEEM_DELAY', '0'))
 
-# ==================== COUNTRY MAPPING SEDERHANA (Contoh) ====================
+# ==================== COUNTRY MAPPING ====================
 country_mapping = {
   'AF': '🇦🇫 Afghanistan',
   'AX': '🇦🇽 Åland Islands',
@@ -308,9 +308,10 @@ active_requests = {}
 captcha_timer_task = None
 
 # Data untuk bind
-pending_bind = {}          # { chat_id: {'uid': ..., 'server': ..., 'start_time': ..., 'status_msg_id': ...} }
+pending_bind = {}          # { chat_id: {'uid': ..., 'server': ..., 'start_time': ...} }
+pending_bind_wait = {}     # { chat_id: asyncio.Event() }
 bind_data = {}             # { chat_id: {'creation': ..., 'last_login': ...} }
-BIND_TIMEOUT = 20          # detik menunggu respons bind
+BIND_WAIT_TIMEOUT = 30     # detik menunggu respons bind
 
 REQUEST_TIMEOUT = 30
 CAPTCHA_TIMEOUT = 30
@@ -595,10 +596,8 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios,
     # Tambahkan informasi creation dan last_login jika tersedia
     extra_info = ""
     if creation:
-        # Edit format creation di sini sesuai keinginan
-        extra_info += f"\nYear Creation: {creation}"   # Contoh: hanya menampilkan tahun
+        extra_info += f"\nYear Creation: {creation}"
     if last_login:
-        # Edit format last_login di sini sesuai keinginan
         extra_info += f"\nLast Login: {last_login}"
     
     final = f"""INFORMATION ACCOUNT:
@@ -684,12 +683,14 @@ async def timeout_checker():
         # Timeout untuk bind request
         bind_timeout = []
         for chat_id, bind_info in list(pending_bind.items()):
-            if now - bind_info['start_time'] > BIND_TIMEOUT:
+            if now - bind_info['start_time'] > BIND_WAIT_TIMEOUT + 5:
                 logger.warning(f"⏰ Bind timeout untuk user {chat_id}")
                 bind_timeout.append(chat_id)
         for chat_id in bind_timeout:
             pending_bind.pop(chat_id, None)
-            # Tidak perlu memberi tahu user, karena info mungkin sudah terkirim tanpa bind
+            if chat_id in pending_bind_wait:
+                pending_bind_wait[chat_id].set()  # Set event agar tidak hang
+                pending_bind_wait.pop(chat_id, None)
         
         await asyncio.sleep(1)
 
@@ -831,15 +832,33 @@ async def message_handler(event):
             nickname = 'Tidak diketahui'
             region = '🌍 Tidak diketahui'
 
-        # Cek apakah ada data bind yang sudah didapat
+        # TUNGGU BIND RESPONSE (maksimal BIND_WAIT_TIMEOUT detik)
         creation = None
         last_login = None
-        bind_info = bind_data.get(user_id)
-        if bind_info:
-            creation = bind_info.get('creation')
-            last_login = bind_info.get('last_login')
-            # Hapus data bind setelah digunakan
-            bind_data.pop(user_id, None)
+        
+        if user_id in pending_bind:
+            # Buat event untuk menunggu bind
+            if user_id not in pending_bind_wait:
+                pending_bind_wait[user_id] = asyncio.Event()
+            
+            try:
+                # Tunggu bind response maksimal BIND_WAIT_TIMEOUT detik
+                await asyncio.wait_for(pending_bind_wait[user_id].wait(), timeout=BIND_WAIT_TIMEOUT)
+                logger.info(f"✅ Bind data diterima tepat waktu untuk user {user_id}")
+            except asyncio.TimeoutError:
+                logger.warning(f"⏰ Bind timeout untuk user {user_id}, lanjut tanpa bind data")
+            
+            # Ambil data bind jika ada
+            bind_info = bind_data.get(user_id)
+            if bind_info:
+                creation = bind_info.get('creation')
+                last_login = bind_info.get('last_login')
+                bind_data.pop(user_id, None)
+            
+            # Hapus event
+            pending_bind_wait.pop(user_id, None)
+            # Hapus dari pending bind
+            pending_bind.pop(user_id, None)
 
         output, markup = format_final_output(text, nickname, region, uid, sid, android, ios, creation, last_login)
         await edit_status_message(user_id, message_id, output, markup)
@@ -1053,7 +1072,7 @@ async def bind_response_handler(event):
         logger.info("⏳ Pesan loading bind, diabaikan")
         return
     
-    # Ekstrak UID dari teks bind (format: 🆔 **ID:** `613746589` atau 🆔 ID: 613746589)
+    # Ekstrak UID dari teks bind
     uid_match = re.search(r'🆔.*?(\d+)', text)
     if not uid_match:
         logger.warning("❌ Tidak dapat menemukan UID dalam pesan bind")
@@ -1073,19 +1092,18 @@ async def bind_response_handler(event):
         logger.warning(f"⚠️ Tidak ada pending bind untuk UID {uid}")
         return
     
-    # Ekstrak Creation (tahun 4 digit)
+    # Ekstrak Creation
     creation_match = re.search(r'🕰.*?Creation.*?(\d{4})', text)
     creation = creation_match.group(1) if creation_match else None
     
-    # Ekstrak Last Login dan bersihkan dari markdown
+    # Ekstrak Last Login dan bersihkan
     last_login_match = re.search(r'🕒.*?Last Login.*?:\s*(.+?)(?:\n|$)', text)
     last_login = last_login_match.group(1).strip() if last_login_match else None
     
-    # Bersihkan markdown dari last_login
     if last_login:
-        # Hapus markdown bold, italic, code
+        # Hapus markdown
         last_login = re.sub(r'[*_`]', '', last_login)
-        # Hapus "PHT" atau "WIB" atau kode timezone lainnya
+        # Hapus timezone
         last_login = re.sub(r'\s*(PHT|WIB|WITA|WIT|UTC|GMT)[^\s]*', '', last_login, flags=re.IGNORECASE)
         # Hapus multiple spaces
         last_login = re.sub(r'\s+', ' ', last_login).strip()
@@ -1095,6 +1113,10 @@ async def bind_response_handler(event):
         'creation': creation,
         'last_login': last_login
     }
+    
+    # Beri sinyal bahwa bind sudah diterima
+    if target_chat in pending_bind_wait:
+        pending_bind_wait[target_chat].set()
     
     # Hapus dari pending bind
     pending_bind.pop(target_chat, None)
@@ -1154,7 +1176,7 @@ async def process_queue():
                     await client.send_message(BOT_A_USERNAME, cmd)
                     logger.info(f"📤 Mengirim ke Bot A: {cmd}")
 
-                    # Kirim perintah /bind ke Bot Bind (stasiunmlbb_bot)
+                    # Kirim perintah /bind ke Bot Bind
                     uid = req_data['args'][0]
                     server = req_data['args'][1]
                     bind_cmd = f"/bind {uid} {server}"
