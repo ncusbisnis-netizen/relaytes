@@ -28,6 +28,10 @@ REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
 OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', '')
 STOK_ADMIN_URL = os.environ.get('STOK_ADMIN_URL', 'https://whatsapp.com/channel/0029VbA4PrD5fM5TMgECoE1E')
 
+# ==================== BIND CONFIG ====================
+# Set BIND_ENABLED = false di Heroku untuk mematikan bind
+BIND_ENABLED = os.environ.get('BIND_ENABLED', 'true').lower() == 'true'
+
 # ==================== FORWARD CONFIG ====================
 FORWARD_TARGET = 'mobilelegendsteamcs'
 FORWARD_ENABLED = True
@@ -316,7 +320,7 @@ pending_bind = {}
 pending_bind_wait = {}
 bind_data = {}
 BIND_WAIT_TIMEOUT = 30
-BIND_REQUEST_TIMEOUT = 5   # detik menunggu respons dari @stasiunmlbb_bot
+BIND_REQUEST_TIMEOUT = 5
 
 REQUEST_TIMEOUT = 30
 CAPTCHA_TIMEOUT = 30
@@ -660,33 +664,31 @@ async def timeout_checker():
         for req_id in to_remove:
             active_requests.pop(req_id, None)
         
-        # ========== TIMEOUT UNTUK BIND REQUEST (5 detik) ==========
-        bind_timeout = []
-        for chat_id, bind_info in list(pending_bind.items()):
-            bind_sent_time = bind_info.get('bind_sent_time', 0)
-            if bind_sent_time > 0 and now - bind_sent_time > BIND_REQUEST_TIMEOUT:
-                logger.warning(f"⏰ Bind request timeout untuk user {chat_id} (tidak ada respons dalam {BIND_REQUEST_TIMEOUT} detik)")
-                bind_timeout.append(chat_id)
-        
-        for chat_id in bind_timeout:
-            pending_bind.pop(chat_id, None)
-            if chat_id in pending_bind_wait:
-                pending_bind_wait[chat_id].set()
-                pending_bind_wait.pop(chat_id, None)
-            logger.info(f"🗑️ Bind request untuk user {chat_id} dibatalkan karena timeout")
-        # ===========================================================
-        
-        # Timeout untuk bind result (setelah loading diterima)
-        bind_result_timeout = []
-        for chat_id, bind_info in list(pending_bind.items()):
-            if now - bind_info['start_time'] > BIND_WAIT_TIMEOUT + 5:
-                logger.warning(f"⏰ Bind result timeout untuk user {chat_id}")
-                bind_result_timeout.append(chat_id)
-        for chat_id in bind_result_timeout:
-            pending_bind.pop(chat_id, None)
-            if chat_id in pending_bind_wait:
-                pending_bind_wait[chat_id].set()
-                pending_bind_wait.pop(chat_id, None)
+        # Timeout untuk bind request (hanya jika bind enabled)
+        if BIND_ENABLED:
+            bind_timeout = []
+            for chat_id, bind_info in list(pending_bind.items()):
+                bind_sent_time = bind_info.get('bind_sent_time', 0)
+                if bind_sent_time > 0 and now - bind_sent_time > BIND_REQUEST_TIMEOUT:
+                    logger.warning(f"⏰ Bind request timeout untuk user {chat_id}")
+                    bind_timeout.append(chat_id)
+            
+            for chat_id in bind_timeout:
+                pending_bind.pop(chat_id, None)
+                if chat_id in pending_bind_wait:
+                    pending_bind_wait[chat_id].set()
+                    pending_bind_wait.pop(chat_id, None)
+            
+            bind_result_timeout = []
+            for chat_id, bind_info in list(pending_bind.items()):
+                if now - bind_info['start_time'] > BIND_WAIT_TIMEOUT + 5:
+                    logger.warning(f"⏰ Bind result timeout untuk user {chat_id}")
+                    bind_result_timeout.append(chat_id)
+            for chat_id in bind_result_timeout:
+                pending_bind.pop(chat_id, None)
+                if chat_id in pending_bind_wait:
+                    pending_bind_wait[chat_id].set()
+                    pending_bind_wait.pop(chat_id, None)
         
         await asyncio.sleep(1)
 
@@ -828,31 +830,35 @@ async def message_handler(event):
         creation = None
         last_login = None
 
-        bind_info = bind_data.get(user_id)
-        if bind_info:
-            creation = bind_info.get('creation')
-            last_login = bind_info.get('last_login')
-            bind_data.pop(user_id, None)
-            logger.info(f"✅ Data bind sudah ada untuk user {user_id}")
-        elif user_id in pending_bind:
-            if user_id not in pending_bind_wait:
-                pending_bind_wait[user_id] = asyncio.Event()
-            
-            try:
-                await asyncio.wait_for(pending_bind_wait[user_id].wait(), timeout=BIND_WAIT_TIMEOUT)
-                logger.info(f"✅ Bind data diterima tepat waktu untuk user {user_id}")
-                bind_info = bind_data.get(user_id)
-                if bind_info:
-                    creation = bind_info.get('creation')
-                    last_login = bind_info.get('last_login')
-                    bind_data.pop(user_id, None)
-            except asyncio.TimeoutError:
-                logger.warning(f"⏰ Bind timeout untuk user {user_id}, lanjut tanpa bind data")
-            
-            pending_bind_wait.pop(user_id, None)
-            pending_bind.pop(user_id, None)
+        # Proses bind hanya jika enabled
+        if BIND_ENABLED:
+            bind_info = bind_data.get(user_id)
+            if bind_info:
+                creation = bind_info.get('creation')
+                last_login = bind_info.get('last_login')
+                bind_data.pop(user_id, None)
+                logger.info(f"✅ Data bind sudah ada untuk user {user_id}")
+            elif user_id in pending_bind:
+                if user_id not in pending_bind_wait:
+                    pending_bind_wait[user_id] = asyncio.Event()
+                
+                try:
+                    await asyncio.wait_for(pending_bind_wait[user_id].wait(), timeout=BIND_WAIT_TIMEOUT)
+                    logger.info(f"✅ Bind data diterima tepat waktu untuk user {user_id}")
+                    bind_info = bind_data.get(user_id)
+                    if bind_info:
+                        creation = bind_info.get('creation')
+                        last_login = bind_info.get('last_login')
+                        bind_data.pop(user_id, None)
+                except asyncio.TimeoutError:
+                    logger.warning(f"⏰ Bind timeout untuk user {user_id}, lanjut tanpa bind data")
+                
+                pending_bind_wait.pop(user_id, None)
+                pending_bind.pop(user_id, None)
+            else:
+                logger.info(f"ℹ️ Tidak ada bind data untuk user {user_id}")
         else:
-            logger.info(f"ℹ️ Tidak ada bind data untuk user {user_id}")
+            logger.info(f"ℹ️ Bind disabled, tidak mengambil data bind")
 
         output, markup = format_final_output(text, nickname, region, uid, sid, android, ios, creation, last_login)
         await edit_status_message(user_id, message_id, output, markup)
@@ -1012,6 +1018,10 @@ async def auto_redeem_handler(event):
 @events.register(events.MessageEdited)
 @events.register(events.NewMessage)
 async def bind_response_handler(event):
+    # Hanya proses jika bind enabled
+    if not BIND_ENABLED:
+        return
+    
     message = event.message
     sender = await message.get_sender()
     
@@ -1021,14 +1031,13 @@ async def bind_response_handler(event):
     text = message.text or ''
     logger.info(f"📩 Dari {BOT_BIND_USERNAME}: {text[:200]}")
     
-    # Jika ada respons apapun dari bot bind, reset timeout
     uid_match = re.search(r'🆔.*?(\d+)', text)
     if uid_match:
         uid = uid_match.group(1)
         for chat_id, info in pending_bind.items():
             if info.get('uid') == uid:
                 info['bind_sent_time'] = 0
-                logger.info(f"✅ Respons bind diterima untuk user {chat_id}, timeout direset")
+                logger.info(f"✅ Respons bind diterima untuk user {chat_id}")
                 break
     
     if "Bind Result" not in text:
@@ -1080,6 +1089,8 @@ async def bind_response_handler(event):
 
 async def process_queue():
     logger.info("🔄 Queue processor started")
+    logger.info(f"📊 Bind feature: {'ENABLED ✅' if BIND_ENABLED else 'DISABLED ❌'}")
+    
     while True:
         try:
             if not bot_status['in_captcha']:
@@ -1144,17 +1155,24 @@ async def process_queue():
                     await client.send_message(BOT_A_USERNAME, cmd)
                     logger.info(f"📤 Mengirim ke Bot A: {cmd}")
 
-                    bind_cmd = f"/bind {uid} {sid}"
-                    await client.send_message(BOT_BIND_USERNAME, bind_cmd)
-                    logger.info(f"📤 Mengirim ke {BOT_BIND_USERNAME}: {bind_cmd}")
+                    # Kirim bind hanya jika enabled
+                    if BIND_ENABLED:
+                        bind_cmd = f"/bind {uid} {sid}"
+                        await client.send_message(BOT_BIND_USERNAME, bind_cmd)
+                        logger.info(f"📤 Mengirim ke {BOT_BIND_USERNAME}: {bind_cmd}")
 
-                    pending_bind[user_id] = {
-                        'uid': uid,
-                        'server': sid,
-                        'start_time': now,
-                        'status_msg_id': msg_id,
-                        'bind_sent_time': now
-                    }
+                        pending_bind[user_id] = {
+                            'uid': uid,
+                            'server': sid,
+                            'start_time': now,
+                            'status_msg_id': msg_id,
+                            'bind_sent_time': now
+                        }
+                    else:
+                        # Langsung set event agar tidak menunggu
+                        if user_id not in pending_bind_wait:
+                            pending_bind_wait[user_id] = asyncio.Event()
+                        pending_bind_wait[user_id].set()
 
                     sent_requests[req_id] = now
                     waiting_for_result[user_id] = True
@@ -1166,12 +1184,11 @@ async def process_queue():
 
 async def main():
     logger.info("🚀 Memulai userbot...")
+    logger.info(f"📊 Bind feature: {'ENABLED ✅' if BIND_ENABLED else 'DISABLED ❌'}")
+    logger.info(f"📊 Auto Redeem: {'✅ ACTIVE' if AUTO_REDEEM_ENABLED else '❌ DISABLED'}")
+    logger.info(f"📊 Forward Telegram: {'✅ ACTIVE' if FORWARD_ENABLED else '❌ DISABLED'} to @{FORWARD_TARGET}")
 
     auto_redeem.load()
-    logger.info(f"📊 Auto Redeem: {'✅ ACTIVE' if AUTO_REDEEM_ENABLED else '❌ DISABLED'}")
-    logger.info(f"📊 Target Channel: @{AUTO_REDEEM_CHANNEL}")
-    logger.info(f"📊 Redeem Delay: {REDEEM_DELAY} seconds")
-    logger.info(f"📊 Forward Telegram: {'✅ ACTIVE' if FORWARD_ENABLED else '❌ DISABLED'} to @{FORWARD_TARGET}")
 
     try:
         queue_len = r.llen('pending_requests')
@@ -1194,7 +1211,11 @@ async def main():
 
         client.add_event_handler(message_handler)
         client.add_event_handler(auto_redeem_handler)
-        client.add_event_handler(bind_response_handler)
+        if BIND_ENABLED:
+            client.add_event_handler(bind_response_handler)
+            logger.info("✅ Bind response handler aktif")
+        else:
+            logger.info("⏸️ Bind response handler nonaktif")
 
         asyncio.create_task(timeout_checker())
         await process_queue()
