@@ -832,33 +832,40 @@ async def message_handler(event):
             nickname = 'Tidak diketahui'
             region = '🌍 Tidak diketahui'
 
-        # TUNGGU BIND RESPONSE (maksimal BIND_WAIT_TIMEOUT detik)
+        # TUNGGU BIND RESPONSE ATAU AMBIL DATA YANG SUDAH ADA
         creation = None
         last_login = None
-        
-        if user_id in pending_bind:
-            # Buat event untuk menunggu bind
+
+        # CEK APAKAH DATA BIND SUDAH ADA (bind datang lebih cepat)
+        bind_info = bind_data.get(user_id)
+        if bind_info:
+            creation = bind_info.get('creation')
+            last_login = bind_info.get('last_login')
+            bind_data.pop(user_id, None)
+            logger.info(f"✅ Data bind sudah ada untuk user {user_id}")
+        elif user_id in pending_bind:
+            # Bind belum datang, tunggu
             if user_id not in pending_bind_wait:
                 pending_bind_wait[user_id] = asyncio.Event()
             
             try:
-                # Tunggu bind response maksimal BIND_WAIT_TIMEOUT detik
                 await asyncio.wait_for(pending_bind_wait[user_id].wait(), timeout=BIND_WAIT_TIMEOUT)
                 logger.info(f"✅ Bind data diterima tepat waktu untuk user {user_id}")
+                
+                # Ambil data bind setelah event
+                bind_info = bind_data.get(user_id)
+                if bind_info:
+                    creation = bind_info.get('creation')
+                    last_login = bind_info.get('last_login')
+                    bind_data.pop(user_id, None)
             except asyncio.TimeoutError:
                 logger.warning(f"⏰ Bind timeout untuk user {user_id}, lanjut tanpa bind data")
             
-            # Ambil data bind jika ada
-            bind_info = bind_data.get(user_id)
-            if bind_info:
-                creation = bind_info.get('creation')
-                last_login = bind_info.get('last_login')
-                bind_data.pop(user_id, None)
-            
-            # Hapus event
+            # Hapus event dan pending bind
             pending_bind_wait.pop(user_id, None)
-            # Hapus dari pending bind
             pending_bind.pop(user_id, None)
+        else:
+            logger.info(f"ℹ️ Tidak ada bind data untuk user {user_id}")
 
         output, markup = format_final_output(text, nickname, region, uid, sid, android, ios, creation, last_login)
         await edit_status_message(user_id, message_id, output, markup)
