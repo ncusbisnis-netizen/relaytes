@@ -804,7 +804,7 @@ async def process_request(user_id, req_id, req_data):
         reply_to_message_id = req_data.get('reply_to_message_id')
         
         # Kirim status awal ke user
-        msg_id = await send_status_to_user(user_id, "Proses Reuqest...: " + str(active_count), reply_to_message_id)
+        msg_id = await send_status_to_user(user_id, "Proses request...", reply_to_message_id)
         if not msg_id:
             logger.error(f"❌ Gagal mengirim status ke user {user_id}")
             return False
