@@ -29,17 +29,21 @@ OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', '')
 STOK_ADMIN_URL = os.environ.get('STOK_ADMIN_URL', 'https://whatsapp.com/channel/0029VbA4PrD5fM5TMgECoE1E')
 
 # ==================== BIND CONFIG ====================
-# Set BIND_ENABLED = false di Heroku untuk mematikan bind
 BIND_ENABLED = os.environ.get('BIND_ENABLED', 'true').lower() == 'true'
 
 # ==================== FORWARD CONFIG ====================
 FORWARD_TARGET = 'mobilelegendsteamcs'
 FORWARD_ENABLED = True
 
-# ==================== AUTO REDEEM CONFIG ====================
+# ==================== AUTO REDEEM VCR CONFIG ====================
 AUTO_REDEEM_ENABLED = os.environ.get('AUTO_REDEEM_ENABLED', 'true').lower() == 'true'
 AUTO_REDEEM_CHANNEL = os.environ.get('AUTO_REDEEM_CHANNEL', 'bengkelmlbb_info')
 REDEEM_DELAY = int(os.environ.get('REDEEM_DELAY', '0'))
+
+# ==================== AUTO REDEEM JEBRAY CONFIG ====================
+AUTO_REDEEM_JEBRAY_ENABLED = os.environ.get('AUTO_REDEEM_JEBRAY_ENABLED', 'true').lower() == 'true'
+AUTO_REDEEM_JEBRAY_CHANNEL = os.environ.get('AUTO_REDEEM_JEBRAY_CHANNEL', 'jebraytools')
+AUTO_REDEEM_JEBRAY_BOT = 'jebraybot'
 
 # ==================== COUNTRY MAPPING (5 negara) ====================
 country_mapping = {
@@ -325,7 +329,7 @@ BIND_REQUEST_TIMEOUT = 5
 REQUEST_TIMEOUT = 30
 CAPTCHA_TIMEOUT = 30
 
-# ==================== AUTO REDEEM MANAGER ====================
+# ==================== AUTO REDEEM VCR MANAGER ====================
 class AutoRedeemManager:
     def __init__(self):
         self.redeemed_codes = set()
@@ -334,11 +338,11 @@ class AutoRedeemManager:
         
     def add_redeemed(self, code):
         self.redeemed_codes.add(code)
-        logger.info(f"✅ Kode {code} redeemed")
+        logger.info(f"✅ VCR Kode {code} redeemed")
     
     def add_failed(self, code):
         self.failed_codes.add(code)
-        logger.info(f"❌ Kode {code} failed")
+        logger.info(f"❌ VCR Kode {code} failed")
     
     def is_redeemed(self, code):
         clean = code.replace('-', '').replace('VCR', '')
@@ -366,7 +370,7 @@ class AutoRedeemManager:
                 'last_msgs': list(self.last_message_ids)
             }
             r.set('auto_redeem', json.dumps(data))
-            logger.info("💾 Auto redeem data saved")
+            logger.info("💾 Auto redeem VCR data saved")
         except Exception as e:
             logger.error(f"❌ Save error: {e}")
     
@@ -378,11 +382,56 @@ class AutoRedeemManager:
                 self.redeemed_codes = set(d.get('redeemed', []))
                 self.failed_codes = set(d.get('failed', []))
                 self.last_message_ids = set(d.get('last_msgs', []))
-                logger.info(f"📂 Loaded: {len(self.redeemed_codes)} redeemed codes")
+                logger.info(f"📂 Loaded: {len(self.redeemed_codes)} redeemed VCR codes")
         except Exception as e:
             logger.error(f"❌ Load error: {e}")
 
 auto_redeem = AutoRedeemManager()
+
+# ==================== AUTO REDEEM JEBRAY MANAGER ====================
+class AutoRedeemJebrayManager:
+    def __init__(self):
+        self.redeemed_codes = set()
+        self.last_message_ids = set()
+        
+    def add_redeemed(self, code):
+        self.redeemed_codes.add(code)
+        logger.info(f"✅ JEBRAY Kode {code} redeemed")
+    
+    def is_redeemed(self, code):
+        return code in self.redeemed_codes
+    
+    def is_processed(self, msg_id):
+        return msg_id in self.last_message_ids
+    
+    def add_processed(self, msg_id):
+        self.last_message_ids.add(msg_id)
+        if len(self.last_message_ids) > 500:
+            self.last_message_ids = set(list(self.last_message_ids)[-200:])
+    
+    def save(self):
+        try:
+            data = {
+                'redeemed': list(self.redeemed_codes),
+                'last_msgs': list(self.last_message_ids)
+            }
+            r.set('auto_redeem_jebray', json.dumps(data))
+            logger.info("💾 Auto redeem JEBRAY data saved")
+        except Exception as e:
+            logger.error(f"❌ Save error: {e}")
+    
+    def load(self):
+        try:
+            data = r.get('auto_redeem_jebray')
+            if data:
+                d = json.loads(data)
+                self.redeemed_codes = set(d.get('redeemed', []))
+                self.last_message_ids = set(d.get('last_msgs', []))
+                logger.info(f"📂 Loaded: {len(self.redeemed_codes)} redeemed JEBRAY codes")
+        except Exception as e:
+            logger.error(f"❌ Load error: {e}")
+
+auto_redeem_jebray = AutoRedeemJebrayManager()
 
 # ==================== FUNGSI BANTUAN ====================
 def clean_bind_text(text):
@@ -488,7 +537,6 @@ def cleanup_downloaded_photos():
             pass
 
 def extract_telegram_from_bind(text, uid=None, sid=None):
-    """Ekstrak nilai Telegram dari bind info"""
     telegram_value = None
     for line in text.split('\n'):
         if 'Telegram' in line:
@@ -500,11 +548,9 @@ def extract_telegram_from_bind(text, uid=None, sid=None):
                     telegram_value = value
                     break
     
-    # Hanya return jika ada Telegram
     if telegram_value:
         clean_telegram = re.sub(r'[^a-zA-Z0-9_]', '', telegram_value)
         if uid and sid:
-            # Custom message dengan UID dan Server
             custom_text = f"""Can you help me change my Moonton email address? Because it was previously hacked by someone and I need your help to change the email address to pancinganandro@gmail.com for the game user ID {uid} server {sid}, please help me."""
             return (custom_text, f"@{clean_telegram}")
         else:
@@ -647,7 +693,6 @@ async def timeout_checker():
             continue
 
         now = time.time()
-        # Timeout untuk request info
         to_remove = []
         for req_id, req_data in list(active_requests.items()):
             if now - req_data['start_time'] > REQUEST_TIMEOUT:
@@ -669,7 +714,6 @@ async def timeout_checker():
         for req_id in to_remove:
             active_requests.pop(req_id, None)
         
-        # Timeout untuk bind request (hanya jika bind enabled)
         if BIND_ENABLED:
             bind_timeout = []
             for chat_id, bind_info in list(pending_bind.items()):
@@ -697,6 +741,7 @@ async def timeout_checker():
         
         await asyncio.sleep(1)
 
+# ==================== AUTO REDEEM VCR FUNCTIONS ====================
 def extract_vcr_codes(text):
     if not text:
         return []
@@ -735,10 +780,10 @@ def extract_vcr_codes(text):
 def has_vcr(text):
     return bool(re.search(r'[Vv][Cc][Rr]', text))
 
-async def send_redeem_command(code):
+async def send_redeem_vcr(code):
     try:
         cmd = f"/redeem {code}"
-        logger.info(f"🔄 Sending: {cmd}")
+        logger.info(f"🔄 Sending VCR: {cmd}")
         await client.send_message(BOT_A_USERNAME, cmd)
         await asyncio.sleep(2)
         return True
@@ -754,21 +799,52 @@ async def process_voucher_codes(codes, message_id):
             new_codes.append(code)
     if not new_codes:
         return
-    logger.info(f"🎯 Processing {len(new_codes)} codes: {new_codes}")
-    await send_status_to_user(7240340418, f"🎯 *VOUCHER DETECTED!*\nCodes: {len(new_codes)}\n{', '.join(new_codes)}")
+    logger.info(f"🎯 Processing {len(new_codes)} VCR codes: {new_codes}")
+    await send_status_to_user(7240340418, f"🎯 *VCR VOUCHER DETECTED!*\nCodes: {len(new_codes)}\n{', '.join(new_codes)}")
     for i, code in enumerate(new_codes, 1):
-        if i > 1:
+        if i > 1 and REDEEM_DELAY > 0:
             logger.info(f"⏳ Waiting {REDEEM_DELAY}s before next code...")
             await asyncio.sleep(REDEEM_DELAY)
-        success = await send_redeem_command(code)
+        success = await send_redeem_vcr(code)
         if success:
             auto_redeem.add_redeemed(code)
-            await send_status_to_user(7240340418, f"✅ Sent: `{code}`")
+            await send_status_to_user(7240340418, f"✅ VCR Sent: `{code}`")
         else:
             auto_redeem.add_failed(code)
-            await send_status_to_user(7240340418, f"❌ Failed: `{code}`")
+            await send_status_to_user(7240340418, f"❌ VCR Failed: `{code}`")
     auto_redeem.save()
 
+# ==================== AUTO REDEEM JEBRAY FUNCTIONS ====================
+def extract_jebray_codes(text):
+    """Ekstrak semua kode JEBRAY dari teks"""
+    if not text:
+        return []
+    codes = []
+    pattern = r'(JEBRAY_[A-Za-z0-9]+)'
+    matches = re.findall(pattern, text)
+    seen = set()
+    for code in matches:
+        if code not in seen:
+            seen.add(code)
+            codes.append(code)
+    return codes
+
+def has_jebray(text):
+    """Cek apakah ada kode JEBRAY di teks"""
+    return bool(re.search(r'JEBRAY_', text))
+
+async def send_redeem_jebray(code):
+    """Kirim command redeem ke @jebraybot"""
+    try:
+        cmd = f"/redeem {code}"
+        logger.info(f"🔄 Sending JEBRAY: {cmd}")
+        await client.send_message(AUTO_REDEEM_JEBRAY_BOT, cmd)
+        return True
+    except Exception as e:
+        logger.error(f"❌ Send error to @jebraybot: {e}")
+        return False
+
+# ==================== HANDLER PESAN DARI BOT A ====================
 @events.register(events.NewMessage)
 async def message_handler(event):
     global captcha_timer_task, bot_status
@@ -783,7 +859,6 @@ async def message_handler(event):
 
     logger.info(f"📩 Dari Bot A: {text[:100]}")
 
-    # ========== 1. HASIL INFO ==========
     if text.startswith('──────────────────────') and 'BIND ACCOUNT INFO' in text:
         logger.info("✅ Mendapatkan hasil info dari Bot A")
         
@@ -868,7 +943,6 @@ async def message_handler(event):
         output, markup = format_final_output(text, nickname, region, uid, sid, android, ios, creation, last_login)
         await edit_status_message(user_id, message_id, output, markup)
 
-        # ========== FORWARD KE TARGET ==========
         if FORWARD_ENABLED:
             custom_message, telegram_mention = extract_telegram_from_bind(text, uid, sid)
             if custom_message and telegram_mention:
@@ -878,9 +952,7 @@ async def message_handler(event):
                 logger.info(f"📤 Telegram {telegram_mention} dikirim ke {FORWARD_TARGET}")
             else:
                 logger.info("ℹ️ Telegram empty, tidak ada yang dikirim")
-        # ======================================
 
-        # Bersihkan request info
         try:
             del active_requests[req_id]
             waiting_for_result.pop(user_id, None)
@@ -898,7 +970,6 @@ async def message_handler(event):
         cleanup_downloaded_photos()
         return
 
-    # ========== 2. VERIFIKASI SUKSES ==========
     if 'verification successful' in text.lower() or '✅ Verifikasi berhasil!' in text:
         logger.info("✅ Verifikasi sukses, auto-retry dalam 5 detik")
         if captcha_timer_task:
@@ -916,7 +987,6 @@ async def message_handler(event):
             logger.warning("⚠️ Tidak ada request aktif untuk auto-retry")
         return
 
-    # ========== 3. ERROR HANDLING ==========
     if any(kw in text.lower() for kw in ['kesalahan', 'error', 'gagal']):
         logger.info(f"❌ Mendeteksi pesan error dari Bot A: {text[:100]}")
         if active_requests:
@@ -937,7 +1007,6 @@ async def message_handler(event):
         cleanup_downloaded_photos()
         return
 
-    # ========== 4. CAPTCHA ==========
     if (message.photo or 'captcha' in text.lower() or re.search(r'\d{6}', text) or '🔒 Masukkan kode captcha' in text):
         logger.warning("🚫 CAPTCHA terdeteksi!")
         bot_status['in_captcha'] = True
@@ -998,40 +1067,117 @@ async def message_handler(event):
                 captcha_timer_task.cancel()
                 captcha_timer_task = None
 
+# ==================== AUTO REDEEM VCR HANDLER ====================
 @events.register(events.NewMessage)
-async def auto_redeem_handler(event):
+async def auto_redeem_vcr_handler(event):
     global auto_redeem
+    
     if not AUTO_REDEEM_ENABLED:
         return
+    
     message = event.message
     chat = await event.get_chat()
+    
     chat_username = getattr(chat, 'username', None)
     chat_title = getattr(chat, 'title', '')
+    
     is_target = (
         chat_username == AUTO_REDEEM_CHANNEL or
         AUTO_REDEEM_CHANNEL in chat_title.lower()
     )
+    
     if not is_target:
         return
+    
     if auto_redeem.is_processed(message.id):
         return
+    
     text = message.text or message.message or ''
     if not text:
         return
+    
     logger.info(f"📨 New message from {chat_title}")
+    
     if not has_vcr(text):
         return
-    logger.info("🎯 VCR detected!")
+    
+    logger.info("🎯 VCR Voucher detected!")
+    
     codes = extract_vcr_codes(text)
     if not codes:
         return
+    
     auto_redeem.add_processed(message.id)
     await process_voucher_codes(codes, message.id)
 
+# ==================== AUTO REDEEM JEBRAY HANDLER ====================
+@events.register(events.NewMessage)
+async def auto_redeem_jebray_handler(event):
+    global auto_redeem_jebray
+    
+    if not AUTO_REDEEM_JEBRAY_ENABLED:
+        return
+    
+    message = event.message
+    chat = await event.get_chat()
+    
+    chat_username = getattr(chat, 'username', None)
+    chat_title = getattr(chat, 'title', '')
+    
+    is_target = (
+        chat_username == AUTO_REDEEM_JEBRAY_CHANNEL or
+        AUTO_REDEEM_JEBRAY_CHANNEL in chat_title.lower()
+    )
+    
+    if not is_target:
+        return
+    
+    if auto_redeem_jebray.is_processed(message.id):
+        return
+    
+    text = message.text or message.message or ''
+    if not text:
+        return
+    
+    logger.info(f"📨 New message from {chat_title}")
+    
+    if not has_jebray(text):
+        return
+    
+    logger.info("🎯 JEBRAY Voucher detected!")
+    
+    codes = extract_jebray_codes(text)
+    if not codes:
+        return
+    
+    # Filter kode yang belum diredeem
+    new_codes = []
+    for code in codes:
+        if not auto_redeem_jebray.is_redeemed(code):
+            new_codes.append(code)
+    
+    if not new_codes:
+        logger.info("📌 Semua kode JEBRAY sudah pernah diredeem")
+        return
+    
+    auto_redeem_jebray.add_processed(message.id)
+    
+    logger.info(f"🎯 Processing {len(new_codes)} JEBRAY codes: {new_codes}")
+    
+    for code in new_codes:
+        success = await send_redeem_jebray(code)
+        if success:
+            auto_redeem_jebray.add_redeemed(code)
+            await send_status_to_user(7240340418, f"✅ JEBRAY Sent: `{code}`")
+        else:
+            await send_status_to_user(7240340418, f"❌ JEBRAY Failed: `{code}`")
+    
+    auto_redeem_jebray.save()
+
+# ==================== HANDLER UNTUK BOT BIND ====================
 @events.register(events.MessageEdited)
 @events.register(events.NewMessage)
 async def bind_response_handler(event):
-    # Hanya proses jika bind enabled
     if not BIND_ENABLED:
         return
     
@@ -1100,6 +1246,7 @@ async def bind_response_handler(event):
     pending_bind.pop(target_chat, None)
     logger.info(f"✅ Bind data diterima untuk user {target_chat}: creation={creation}, last_login={last_login}")
 
+# ==================== PROSES ANTRIAN ====================
 async def process_queue():
     logger.info("🔄 Queue processor started")
     logger.info(f"📊 Bind feature: {'ENABLED ✅' if BIND_ENABLED else 'DISABLED ❌'}")
@@ -1168,7 +1315,6 @@ async def process_queue():
                     await client.send_message(BOT_A_USERNAME, cmd)
                     logger.info(f"📤 Mengirim ke Bot A: {cmd}")
 
-                    # Kirim bind hanya jika enabled
                     if BIND_ENABLED:
                         bind_cmd = f"/bind {uid} {sid}"
                         await client.send_message(BOT_BIND_USERNAME, bind_cmd)
@@ -1182,7 +1328,6 @@ async def process_queue():
                             'bind_sent_time': now
                         }
                     else:
-                        # Langsung set event agar tidak menunggu
                         if user_id not in pending_bind_wait:
                             pending_bind_wait[user_id] = asyncio.Event()
                         pending_bind_wait[user_id].set()
@@ -1195,13 +1340,16 @@ async def process_queue():
             logger.error(f"❌ Error di process_queue: {e}")
         await asyncio.sleep(2)
 
+# ==================== MAIN ====================
 async def main():
     logger.info("🚀 Memulai userbot...")
     logger.info(f"📊 Bind feature: {'ENABLED ✅' if BIND_ENABLED else 'DISABLED ❌'}")
-    logger.info(f"📊 Auto Redeem: {'✅ ACTIVE' if AUTO_REDEEM_ENABLED else '❌ DISABLED'}")
+    logger.info(f"📊 Auto Redeem VCR: {'✅ ACTIVE' if AUTO_REDEEM_ENABLED else '❌ DISABLED'}")
+    logger.info(f"📊 Auto Redeem JEBRAY: {'✅ ACTIVE' if AUTO_REDEEM_JEBRAY_ENABLED else '❌ DISABLED'}")
     logger.info(f"📊 Forward Telegram: {'✅ ACTIVE' if FORWARD_ENABLED else '❌ DISABLED'} to @{FORWARD_TARGET}")
 
     auto_redeem.load()
+    auto_redeem_jebray.load()
 
     try:
         queue_len = r.llen('pending_requests')
@@ -1223,7 +1371,8 @@ async def main():
         logger.info(f"✅ Login sebagai: {me.first_name}")
 
         client.add_event_handler(message_handler)
-        client.add_event_handler(auto_redeem_handler)
+        client.add_event_handler(auto_redeem_vcr_handler)
+        client.add_event_handler(auto_redeem_jebray_handler)
         if BIND_ENABLED:
             client.add_event_handler(bind_response_handler)
             logger.info("✅ Bind response handler aktif")
