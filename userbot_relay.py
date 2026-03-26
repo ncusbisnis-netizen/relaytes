@@ -802,6 +802,9 @@ async def auto_redeem_handler(event):
 @events.register(events.MessageEdited)
 @events.register(events.NewMessage)
 async def bind_response_handler(event):
+    @events.register(events.MessageEdited)
+@events.register(events.NewMessage)
+async def bind_response_handler(event):
     """Menangkap respons dari @stasiunmlbb_bot (termasuk pesan yang diedit)"""
     message = event.message
     sender = await message.get_sender()
@@ -811,31 +814,32 @@ async def bind_response_handler(event):
         return
     
     text = message.text or ''
-    logger.info(f"📩 Dari {BOT_BIND_USERNAME}: {text[:100]}")
+    logger.info(f"📩 Dari {BOT_BIND_USERNAME}: {text[:200]}")  # perpanjang log untuk debug
     
-    # Ekstrak UID dari teks bind (misal: "🆔 ID: 1742463438 (18412)")
-    uid_match = re.search(r'🆔 ID:\s*(\d+)', text)
+    # Ekstrak UID dari teks bind (format: 🆔 **ID:** `613746589` (`4029`) atau 🆔 ID: 613746589 (4029))
+    # Regex yang lebih fleksibel: menangkap angka setelah "ID:" atau "**ID:**", diikuti backticks atau tidak
+    uid_match = re.search(r'🆔\s*\**ID\**\s*:\s*`?(\d+)`?', text)
     if not uid_match:
+        logger.warning("❌ Tidak dapat menemukan UID dalam pesan bind")
         return
     
     uid = uid_match.group(1)
+    logger.info(f"🔍 Ekstrak UID: {uid}")
     
     # Cari pending bind yang memiliki UID yang sama
     target_chat = None
-    bind_info = None
     for chat_id, info in pending_bind.items():
         if info.get('uid') == uid:
             target_chat = chat_id
-            bind_info = info
             break
     
     if not target_chat:
-        logger.debug(f"Tidak ada pending bind untuk UID {uid}")
+        logger.warning(f"⚠️ Tidak ada pending bind untuk UID {uid}")
         return
     
-    # Ekstrak Creation dan Last Login
-    creation_match = re.search(r'🕰 Creation:\s*([^\n]+)', text)
-    last_login_match = re.search(r'🕒 Last Login:\s*([^\n]+)', text)
+    # Ekstrak Creation dan Last Login (format mungkin mengandung markdown)
+    creation_match = re.search(r'🕰\s*\**Creation\**\s*:\s*`?([^`\n]+)`?', text)
+    last_login_match = re.search(r'🕒\s*\**Last Login\**\s*:\s*`?([^`\n]+)`?', text)
     
     creation = creation_match.group(1).strip() if creation_match else None
     last_login = last_login_match.group(1).strip() if last_login_match else None
