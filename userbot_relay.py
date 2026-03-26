@@ -23,6 +23,7 @@ API_HASH = os.environ.get('API_HASH', '')
 SESSION_STRING = os.environ.get('SESSION_STRING', '')
 BOT_B_TOKEN = os.environ.get('BOT_B_TOKEN', '')
 BOT_A_USERNAME = 'bengkelmlbb_bot'
+BOT_BIND_USERNAME = 'stasiunmlbb_bot'   # Bot bind baru
 REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
 OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', '')
 STOK_ADMIN_URL = os.environ.get('STOK_ADMIN_URL', 'https://whatsapp.com/channel/0029VbA4PrD5fM5TMgECoE1E')
@@ -32,254 +33,19 @@ AUTO_REDEEM_ENABLED = os.environ.get('AUTO_REDEEM_ENABLED', 'true').lower() == '
 AUTO_REDEEM_CHANNEL = os.environ.get('AUTO_REDEEM_CHANNEL', 'bengkelmlbb_info')
 REDEEM_DELAY = int(os.environ.get('REDEEM_DELAY', '0'))
 
-# ==================== COUNTRY MAPPING SEDERHANA ====================
+# ==================== COUNTRY MAPPING SEDERHANA (Contoh) ====================
 country_mapping = {
-  'AF': '🇦🇫 Afghanistan',
-  'AX': '🇦🇽 Åland Islands',
-  'AL': '🇦🇱 Albania',
-  'DZ': '🇩🇿 Algeria',
-  'AS': '🇦🇸 American Samoa',
-  'AD': '🇦🇩 Andorra',
-  'AO': '🇦🇴 Angola',
-  'AI': '🇦🇮 Anguilla',
-  'AQ': '🇦🇶 Antarctica',
-  'AG': '🇦🇬 Antigua and Barbuda',
-  'AR': '🇦🇷 Argentina',
-  'AM': '🇦🇲 Armenia',
-  'AW': '🇦🇼 Aruba',
-  'AU': '🇦🇺 Australia',
-  'AT': '🇦🇹 Austria',
-  'AZ': '🇦🇿 Azerbaijan',
-  'BS': '🇧🇸 Bahamas',
-  'BH': '🇧🇭 Bahrain',
-  'BD': '🇧🇩 Bangladesh',
-  'BB': '🇧🇧 Barbados',
-  'BY': '🇧🇾 Belarus',
-  'BE': '🇧🇪 Belgium',
-  'BZ': '🇧🇿 Belize',
-  'BJ': '🇧🇯 Benin',
-  'BM': '🇧🇲 Bermuda',
-  'BT': '🇧🇹 Bhutan',
-  'BO': '🇧🇴 Bolivia, Plurinational State of bolivia',
-  'BA': '🇧🇦 Bosnia and Herzegovina',
-  'BW': '🇧🇼 Botswana',
-  'BV': '🇧🇻 Bouvet Island',
-  'BR': '🇧🇷 Brazil',
-  'IO': '🇮🇴 British Indian Ocean Territory',
-  'BN': '🇧🇳 Brunei Darussalam',
-  'BG': '🇧🇬 Bulgaria',
-  'BF': '🇧🇫 Burkina Faso',
-  'BI': '🇧🇮 Burundi',
-  'KH': '🇰🇭 Cambodia',
-  'CM': '🇨🇲 Cameroon',
-  'CA': '🇨🇦 Canada',
-  'CV': '🇨🇻 Cape Verde',
-  'KY': '🇰🇾 Cayman Islands',
-  'CF': '🇨🇫 Central African Republic',
-  'TD': '🇹🇩 Chad',
-  'CL': '🇨🇱 Chile',
-  'CN': '🇨🇳 China',
-  'CX': '🇨🇽 Christmas Island',
-  'CC': '🇨🇨 Cocos (Keeling) Islands',
-  'CO': '🇨🇴 Colombia',
-  'KM': '🇰🇲 Comoros',
-  'CG': '🇨🇬 Congo',
-  'CD': '🇨🇩 Congo, The Democratic Republic of the Congo',
-  'CK': '🇨🇰 Cook Islands',
-  'CR': '🇨🇷 Costa Rica',
-  'CI': "🇨🇮 Cote d'Ivoire",
-  'HR': '🇭🇷 Croatia',
-  'CU': '🇨🇺 Cuba',
-  'CY': '🇨🇾 Cyprus',
-  'CZ': '🇨🇿 Czech Republic',
-  'DK': '🇩🇰 Denmark',
-  'DJ': '🇩🇯 Djibouti',
-  'DM': '🇩🇲 Dominica',
-  'DO': '🇩🇴 Dominican Republic',
-  'EC': '🇪🇨 Ecuador',
-  'EG': '🇪🇬 Egypt',
-  'SV': '🇸🇻 El Salvador',
-  'GQ': '🇬🇶 Equatorial Guinea',
-  'ER': '🇪🇷 Eritrea',
-  'EE': '🇪🇪 Estonia',
-  'ET': '🇪🇹 Ethiopia',
-  'FK': '🇫🇰 Falkland Islands (Malvinas)',
-  'FO': '🇫🇴 Faroe Islands',
-  'FJ': '🇫🇯 Fiji',
-  'FI': '🇫🇮 Finland',
-  'FR': '🇫🇷 France',
-  'GF': '🇬🇫 French Guiana',
-  'PF': '🇵🇫 French Polynesia',
-  'TF': '🇹🇫 French Southern Territories',
-  'GA': '🇬🇦 Gabon',
-  'GM': '🇬🇲 Gambia',
-  'GE': '🇬🇪 Georgia',
-  'DE': '🇩🇪 Germany',
-  'GH': '🇬🇭 Ghana',
-  'GI': '🇬🇮 Gibraltar',
-  'GR': '🇬🇷 Greece',
-  'GL': '🇬🇱 Greenland',
-  'GD': '🇬🇩 Grenada',
-  'GP': '🇬🇵 Guadeloupe',
-  'GU': '🇬🇺 Guam',
-  'GT': '🇬🇹 Guatemala',
-  'GG': '🇬🇬 Guernsey',
-  'GN': '🇬🇳 Guinea',
-  'GW': '🇬🇼 Guinea-Bissau',
-  'GY': '🇬🇾 Guyana',
-  'HT': '🇭🇹 Haiti',
-  'HM': '🇭🇲 Heard Island and Mcdonald Islands',
-  'VA': '🇻🇦 Holy See (Vatican City State)',
-  'HN': '🇭🇳 Honduras',
-  'HK': '🇭🇰 Hong Kong',
-  'HU': '🇭🇺 Hungary',
-  'IS': '🇮🇸 Iceland',
-  'IN': '🇮🇳 India',
-  'ID': '🇮🇩 Indonesia',
-  'IR': '🇮🇷 Iran, Islamic Republic of Persian Gulf',
-  'IQ': '🇮🇶 Iraq',
-  'IE': '🇮🇪 Ireland',
-  'IM': '🇮🇲 Isle of Man',
-  'IL': '🇮🇱 Israel',
-  'IT': '🇮🇹 Italy',
-  'JM': '🇯🇲 Jamaica',
-  'JP': '🇯🇵 Japan',
-  'JE': '🇯🇪 Jersey',
-  'JO': '🇯🇴 Jordan',
-  'KZ': '🇰🇿 Kazakhstan',
-  'KE': '🇰🇪 Kenya',
-  'KI': '🇰🇮 Kiribati',
-  'KP': "🇰🇵 Korea, Democratic People's Republic of Korea",
-  'KR': '🇰🇷 Korea, Republic of South Korea',
-  'XK': '🇽🇰 Kosovo',
-  'KW': '🇰🇼 Kuwait',
-  'KG': '🇰🇬 Kyrgyzstan',
-  'LA': '🇱🇦 Laos',
-  'LV': '🇱🇻 Latvia',
-  'LB': '🇱🇧 Lebanon',
-  'LS': '🇱🇸 Lesotho',
-  'LR': '🇱🇷 Liberia',
-  'LY': '🇱🇾 Libyan Arab Jamahiriya',
-  'LI': '🇱🇮 Liechtenstein',
-  'LT': '🇱🇹 Lithuania',
-  'LU': '🇱🇺 Luxembourg',
-  'MO': '🇲🇴 Macao',
-  'MK': '🇲🇰 Macedonia',
-  'MG': '🇲🇬 Madagascar',
-  'MW': '🇲🇼 Malawi',
-  'MY': '🇲🇾 Malaysia',
-  'MV': '🇲🇻 Maldives',
-  'ML': '🇲🇱 Mali',
-  'MT': '🇲🇹 Malta',
-  'MH': '🇲🇭 Marshall Islands',
-  'MQ': '🇲🇶 Martinique',
-  'MR': '🇲🇷 Mauritania',
-  'MU': '🇲🇺 Mauritius',
-  'YT': '🇾🇹 Mayotte',
-  'MX': '🇲🇽 Mexico',
-  'FM': '🇫🇲 Micronesia, Federated States of Micronesia',
-  'MD': '🇲🇩 Moldova',
-  'MC': '🇲🇨 Monaco',
-  'MN': '🇲🇳 Mongolia',
-  'ME': '🇲🇪 Montenegro',
-  'MS': '🇲🇸 Montserrat',
-  'MA': '🇲🇦 Morocco',
-  'MZ': '🇲🇿 Mozambique',
-  'MM': '🇲🇲 Myanmar',
-  'NA': '🇳🇦 Namibia',
-  'NR': '🇳🇷 Nauru',
-  'NP': '🇳🇵 Nepal',
-  'NL': '🇳🇱 Netherlands',
-  'AN': 'Netherlands Antilles',
-  'NC': '🇳🇨 New Caledonia',
-  'NZ': '🇳🇿 New Zealand',
-  'NI': '🇳🇮 Nicaragua',
-  'NE': '🇳🇪 Niger',
-  'NG': '🇳🇬 Nigeria',
-  'NU': '🇳🇺 Niue',
-  'NF': '🇳🇫 Norfolk Island',
-  'MP': '🇲🇵 Northern Mariana Islands',
-  'NO': '🇳🇴 Norway',
-  'OM': '🇴🇲 Oman',
-  'PK': '🇵🇰 Pakistan',
-  'PW': '🇵🇼 Palau',
-  'PS': '🇵🇸 Palestinian Territory, Occupied',
-  'PA': '🇵🇦 Panama',
-  'PG': '🇵🇬 Papua New Guinea',
-  'PY': '🇵🇾 Paraguay',
-  'PE': '🇵🇪 Peru',
-  'PH': '🇵🇭 Philippines',
-  'PN': '🇵🇳 Pitcairn',
-  'PL': '🇵🇱 Poland',
-  'PT': '🇵🇹 Portugal',
-  'PR': '🇵🇷 Puerto Rico',
-  'QA': '🇶🇦 Qatar',
-  'RO': '🇷🇴 Romania',
-  'RU': '🇷🇺 Russia',
-  'RW': '🇷🇼 Rwanda',
-  'RE': '🇷🇪 Reunion',
-  'BL': '🇧🇱 Saint Barthelemy',
-  'SH': '🇸🇭 Saint Helena, Ascension and Tristan Da Cunha',
-  'KN': '🇰🇳 Saint Kitts and Nevis',
-  'LC': '🇱🇨 Saint Lucia',
-  'MF': '🇲🇫 Saint Martin',
-  'PM': '🇵🇲 Saint Pierre and Miquelon',
-  'VC': '🇻🇨 Saint Vincent and the Grenadines',
-  'WS': '🇼🇸 Samoa',
-  'SM': '🇸🇲 San Marino',
-  'ST': '🇸🇹 Sao Tome and Principe',
-  'SA': '🇸🇦 Saudi Arabia',
-  'SN': '🇸🇳 Senegal',
-  'RS': '🇷🇸 Serbia',
-  'SC': '🇸🇨 Seychelles',
-  'SL': '🇸🇱 Sierra Leone',
-  'SG': '🇸🇬 Singapore',
-  'SK': '🇸🇰 Slovakia',
-  'SI': '🇸🇮 Slovenia',
-  'SB': '🇸🇧 Solomon Islands',
-  'SO': '🇸🇴 Somalia',
-  'ZA': '🇿🇦 South Africa',
-  'SS': '🇸🇸 South Sudan',
-  'GS': '🇬🇸 South Georgia and the South Sandwich Islands',
-  'ES': '🇪🇸 Spain',
-  'LK': '🇱🇰 Sri Lanka',
-  'SD': '🇸🇩 Sudan',
-  'SR': '🇸🇷 Suriname',
-  'SJ': '🇸🇯 Svalbard and Jan Mayen',
-  'SZ': '🇸🇿 Eswatini',
-  'SE': '🇸🇪 Sweden',
-  'CH': '🇨🇭 Switzerland',
-  'SY': '🇸🇾 Syrian Arab Republic',
-  'TW': '🇹🇼 Taiwan',
-  'TJ': '🇹🇯 Tajikistan',
-  'TZ': '🇹🇿 Tanzania, United Republic of Tanzania',
-  'TH': '🇹🇭 Thailand',
-  'TL': '🇹🇱 Timor-Leste',
-  'TG': '🇹🇬 Togo',
-  'TK': '🇹🇰 Tokelau',
-  'TO': '🇹🇴 Tonga',
-  'TT': '🇹🇹 Trinidad and Tobago',
-  'TN': '🇹🇳 Tunisia',
-  'TR': '🇹🇷 Turkey',
-  'TM': '🇹🇲 Turkmenistan',
-  'TC': '🇹🇨 Turks and Caicos Islands',
-  'TV': '🇹🇻 Tuvalu',
-  'UG': '🇺🇬 Uganda',
-  'UA': '🇺🇦 Ukraine',
-  'AE': '🇦🇪 United Arab Emirates',
-  'GB': '🇬🇧 United Kingdom',
-  'US': '🇺🇸 United States',
-  'UY': '🇺🇾 Uruguay',
-  'UZ': '🇺🇿 Uzbekistan',
-  'VU': '🇻🇺 Vanuatu',
-  'VE': '🇻🇪 Venezuela, Bolivarian Republic of Venezuela',
-  'VN': '🇻🇳 Vietnam',
-  'VG': '🇻🇬 Virgin Islands, British',
-  'VI': '🇻🇮 Virgin Islands, U.S.',
-  'WF': '🇼🇫 Wallis and Futuna',
-  'YE': '🇾🇪 Yemen',
-  'ZM': '🇿🇲 Zambia',
-  'ZW': '🇿🇼 Zimbabwe',
+    'ID': '🇮🇩 Indonesia',
+    'MY': '🇲🇾 Malaysia',
+    'SG': '🇸🇬 Singapore',
+    'PH': '🇵🇭 Philippines',
+    'TH': '🇹🇭 Thailand',
+    'VN': '🇻🇳 Vietnam',
+    'US': '🇺🇸 United States',
+    'GB': '🇬🇧 United Kingdom',
+    'JP': '🇯🇵 Japan',
+    'KR': '🇰🇷 South Korea',
+    # Tambahkan negara lain sesuai kebutuhan
 }
 
 # Validasi environment
@@ -305,6 +71,11 @@ waiting_for_result = {}
 downloaded_photos = []
 active_requests = {}
 captcha_timer_task = None
+
+# Data untuk bind
+pending_bind = {}          # { chat_id: {'uid': ..., 'server': ..., 'start_time': ..., 'status_msg_id': ...} }
+bind_data = {}             # { chat_id: {'creation': ..., 'last_login': ...} }
+BIND_TIMEOUT = 20          # detik menunggu respons bind
 
 REQUEST_TIMEOUT = 30
 CAPTCHA_TIMEOUT = 30
@@ -494,8 +265,8 @@ def cleanup_downloaded_photos():
         except:
             pass
 
-def format_final_output(original_text, nickname, region, uid, sid, android, ios):
-    """Format output final"""
+def format_final_output(original_text, nickname, region, uid, sid, android, ios, creation=None, last_login=None):
+    """Format output final dengan menambahkan creation dan last_login jika ada"""
     keywords = ['Moonton', 'VK', 'Google Play', 'Tiktok', 'Facebook', 'Apple', 'GCID', 'Telegram', 'WhatsApp']
     
     lines = original_text.split('\n')
@@ -586,10 +357,19 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios)
         else:
             bind_info.append(f"• {kw}: empty.")
     
+    # Tambahkan informasi creation dan last_login jika tersedia
+    extra_info = ""
+    if creation:
+        # Edit format creation di sini sesuai keinginan
+        extra_info += f"\nYear Creation: {creation}"   # Contoh: hanya menampilkan tahun
+    if last_login:
+        # Edit format last_login di sini sesuai keinginan
+        extra_info += f"\nLast Login: {last_login}"
+    
     final = f"""INFORMATION ACCOUNT:
 ID Server: {uid} ({sid})
 Nickname: {nickname}
-Region: {region}
+Region: {region}{extra_info}
 
 BIND INFO:
 {chr(10).join(bind_info)}
@@ -644,6 +424,7 @@ async def timeout_checker():
             continue
 
         now = time.time()
+        # Timeout untuk request info
         to_remove = []
         for req_id, req_data in list(active_requests.items()):
             if now - req_data['start_time'] > REQUEST_TIMEOUT:
@@ -664,6 +445,17 @@ async def timeout_checker():
                 to_remove.append(req_id)
         for req_id in to_remove:
             active_requests.pop(req_id, None)
+        
+        # Timeout untuk bind request
+        bind_timeout = []
+        for chat_id, bind_info in list(pending_bind.items()):
+            if now - bind_info['start_time'] > BIND_TIMEOUT:
+                logger.warning(f"⏰ Bind timeout untuk user {chat_id}")
+                bind_timeout.append(chat_id)
+        for chat_id in bind_timeout:
+            pending_bind.pop(chat_id, None)
+            # Tidak perlu memberi tahu user, karena info mungkin sudah terkirim tanpa bind
+        
         await asyncio.sleep(1)
 
 # ==================== AUTO REDEEM FUNCTIONS ====================
@@ -795,6 +587,7 @@ async def message_handler(event):
         android = android_match.group(1) if android_match else '0'
         ios = ios_match.group(1) if ios_match else '0'
 
+        # Ambil nickname dan region dari GoPay
         gopay = validate_mlbb_gopay_sync(uid, sid)
         if gopay['status']:
             nickname = gopay['username']
@@ -803,9 +596,20 @@ async def message_handler(event):
             nickname = 'Tidak diketahui'
             region = '🌍 Tidak diketahui'
 
-        output, markup = format_final_output(text, nickname, region, uid, sid, android, ios)
+        # Cek apakah ada data bind yang sudah didapat
+        creation = None
+        last_login = None
+        bind_info = bind_data.get(user_id)
+        if bind_info:
+            creation = bind_info.get('creation')
+            last_login = bind_info.get('last_login')
+            # Hapus data bind setelah digunakan
+            bind_data.pop(user_id, None)
+
+        output, markup = format_final_output(text, nickname, region, uid, sid, android, ios, creation, last_login)
         await edit_status_message(user_id, message_id, output, markup)
 
+        # Bersihkan request info
         try:
             del active_requests[req_id]
             waiting_for_result.pop(user_id, None)
@@ -844,7 +648,6 @@ async def message_handler(event):
         return
 
     # ========== 3. ERROR HANDLING (LANGSUNG BATALKAN) ==========
-    # Jika pesan mengandung kata error/kesalahan/gagal, batalkan request aktif
     if any(kw in text.lower() for kw in ['kesalahan', 'error', 'gagal']):
         logger.info(f"❌ Mendeteksi pesan error dari Bot A: {text[:100]}")
         
@@ -995,6 +798,58 @@ async def auto_redeem_handler(event):
     auto_redeem.add_processed(message.id)
     await process_voucher_codes(codes, message.id)
 
+# ==================== HANDLER UNTUK BOT BIND ====================
+@events.register(events.MessageEdited)
+@events.register(events.NewMessage)
+async def bind_response_handler(event):
+    """Menangkap respons dari @stasiunmlbb_bot (termasuk pesan yang diedit)"""
+    message = event.message
+    sender = await message.get_sender()
+    
+    # Hanya dari bot bind
+    if not sender or sender.username != BOT_BIND_USERNAME:
+        return
+    
+    text = message.text or ''
+    logger.info(f"📩 Dari {BOT_BIND_USERNAME}: {text[:100]}")
+    
+    # Ekstrak UID dari teks bind (misal: "🆔 ID: 1742463438 (18412)")
+    uid_match = re.search(r'🆔 ID:\s*(\d+)', text)
+    if not uid_match:
+        return
+    
+    uid = uid_match.group(1)
+    
+    # Cari pending bind yang memiliki UID yang sama
+    target_chat = None
+    bind_info = None
+    for chat_id, info in pending_bind.items():
+        if info.get('uid') == uid:
+            target_chat = chat_id
+            bind_info = info
+            break
+    
+    if not target_chat:
+        logger.debug(f"Tidak ada pending bind untuk UID {uid}")
+        return
+    
+    # Ekstrak Creation dan Last Login
+    creation_match = re.search(r'🕰 Creation:\s*([^\n]+)', text)
+    last_login_match = re.search(r'🕒 Last Login:\s*([^\n]+)', text)
+    
+    creation = creation_match.group(1).strip() if creation_match else None
+    last_login = last_login_match.group(1).strip() if last_login_match else None
+    
+    # Simpan data bind
+    bind_data[target_chat] = {
+        'creation': creation,
+        'last_login': last_login
+    }
+    
+    # Hapus dari pending bind
+    pending_bind.pop(target_chat, None)
+    logger.info(f"✅ Bind data diterima untuk user {target_chat}: creation={creation}, last_login={last_login}")
+
 # ==================== PROSES ANTRIAN ====================
 async def process_queue():
     logger.info("🔄 Queue processor started")
@@ -1027,6 +882,7 @@ async def process_queue():
                         await asyncio.sleep(5)
                         continue
 
+                    # Kirim status awal ke user
                     msg_id = await send_status_to_user(user_id, "Proses request...", reply_to_message_id)
                     if not msg_id:
                         logger.error(f"❌ Gagal mengirim status ke user {user_id}, request dibatalkan")
@@ -1034,6 +890,7 @@ async def process_queue():
                         r.delete(req_id)
                         continue
 
+                    # Simpan request info aktif
                     active_requests[req_id] = {
                         'chat_id': user_id,
                         'message_id': msg_id,
@@ -1042,9 +899,25 @@ async def process_queue():
                         'args': req_data['args']
                     }
 
+                    # Kirim perintah /info ke Bot A
                     cmd = f"{req_data['command']} {req_data['args'][0]} {req_data['args'][1]}"
                     await client.send_message(BOT_A_USERNAME, cmd)
                     logger.info(f"📤 Mengirim ke Bot A: {cmd}")
+
+                    # Kirim perintah /bind ke Bot Bind (stasiunmlbb_bot)
+                    uid = req_data['args'][0]
+                    server = req_data['args'][1]
+                    bind_cmd = f"/bind {uid} {server}"
+                    await client.send_message(BOT_BIND_USERNAME, bind_cmd)
+                    logger.info(f"📤 Mengirim ke {BOT_BIND_USERNAME}: {bind_cmd}")
+
+                    # Catat pending bind
+                    pending_bind[user_id] = {
+                        'uid': uid,
+                        'server': server,
+                        'start_time': now,
+                        'status_msg_id': msg_id
+                    }
 
                     sent_requests[req_id] = now
                     waiting_for_result[user_id] = True
@@ -1087,6 +960,7 @@ async def main():
         # Daftarkan event handler
         client.add_event_handler(message_handler)
         client.add_event_handler(auto_redeem_handler)
+        client.add_event_handler(bind_response_handler)
 
         # Jalankan timeout checker
         asyncio.create_task(timeout_checker())
