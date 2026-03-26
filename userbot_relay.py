@@ -811,11 +811,15 @@ async def bind_response_handler(event):
         return
     
     text = message.text or ''
-    logger.info(f"📩 Dari {BOT_BIND_USERNAME}: {text[:200]}")  # perpanjang log untuk debug
+    logger.info(f"📩 Dari {BOT_BIND_USERNAME}: {text[:200]}")
     
-    # Ekstrak UID dari teks bind (format: 🆔 **ID:** `613746589` (`4029`) atau 🆔 ID: 613746589 (4029))
-    # Regex yang lebih fleksibel: menangkap angka setelah "ID:" atau "**ID:**", diikuti backticks atau tidak
-    uid_match = re.search(r'🆔\s*\**ID\**\s*:\s*`?(\d+)`?', text)
+    # Hanya proses pesan yang mengandung "Bind Result" (bukan pesan loading)
+    if "Bind Result" not in text:
+        logger.info("⏳ Pesan loading bind, diabaikan")
+        return
+    
+    # Ekstrak UID dari teks bind (format: 🆔 **ID:** `613746589` atau 🆔 ID: 613746589)
+    uid_match = re.search(r'🆔.*?(\d+)', text)
     if not uid_match:
         logger.warning("❌ Tidak dapat menemukan UID dalam pesan bind")
         return
@@ -834,11 +838,12 @@ async def bind_response_handler(event):
         logger.warning(f"⚠️ Tidak ada pending bind untuk UID {uid}")
         return
     
-    # Ekstrak Creation dan Last Login (format mungkin mengandung markdown)
-    creation_match = re.search(r'🕰\s*\**Creation\**\s*:\s*`?([^`\n]+)`?', text)
-    last_login_match = re.search(r'🕒\s*\**Last Login\**\s*:\s*`?([^`\n]+)`?', text)
+    # Ekstrak Creation (tahun 4 digit)
+    creation_match = re.search(r'🕰.*?Creation.*?(\d{4})', text)
+    creation = creation_match.group(1) if creation_match else None
     
-    creation = creation_match.group(1).strip() if creation_match else None
+    # Ekstrak Last Login (semua teks setelah titik dua hingga akhir baris)
+    last_login_match = re.search(r'🕒.*?Last Login.*?:\s*(.+?)(?:\n|$)', text)
     last_login = last_login_match.group(1).strip() if last_login_match else None
     
     # Simpan data bind
