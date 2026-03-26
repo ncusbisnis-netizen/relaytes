@@ -833,126 +833,101 @@ async def message_handler(event):
     logger.info(f"📩 Dari Bot A: {text[:100]}")
 
     # ========== 1. HASIL INFO ==========
-if text.startswith('──────────────────────') and 'BIND ACCOUNT INFO' in text:
-    logger.info("✅ Mendapatkan hasil info dari Bot A")
-    
-    if not active_requests:
-        logger.warning("❌ Tidak ada request aktif, hasil diabaikan")
-        return
-
-    req_id, req_info = next(iter(active_requests.items()))
-    user_id = req_info['chat_id']
-    message_id = req_info['message_id']
-
-    id_match = re.search(r'ID:?\s*(\d+)', text)
-    server_match = re.search(r'Server:?\s*(\d+)', text)
-    android_match = re.search(r'Android:?\s*(\d+)', text)
-    ios_match = re.search(r'iOS:?\s*(\d+)', text)
-
-    uid = id_match.group(1) if id_match else 'Unknown'
-    sid = server_match.group(1) if server_match else 'Unknown'
-    android = android_match.group(1) if android_match else '0'
-    ios = ios_match.group(1) if ios_match else '0'
-
-    # ========== VALIDASI MISMATCH ==========
-    expected_uid = req_info['args'][0]
-    expected_sid = req_info['args'][1]
-
-    if uid != expected_uid or sid != expected_sid:
-        logger.error(f"❌ MISMATCH! Request: {expected_uid}:{expected_sid} | Response: {uid}:{sid}")
+    if text.startswith('──────────────────────') and 'BIND ACCOUNT INFO' in text:
+        logger.info("✅ Mendapatkan hasil info dari Bot A")
         
-        # Cari request yang benar
-        found = False
-        for r_id, r_info in active_requests.items():
-            if r_info['args'][0] == uid and r_info['args'][1] == sid:
-                logger.info(f"✅ Menemukan request yang cocok: {r_id}")
-                req_id = r_id
-                req_info = r_info
-                user_id = req_info['chat_id']
-                message_id = req_info['message_id']
-                found = True
-                break
-        
-        if not found:
-            logger.error(f"❌ Tidak ada request cocok untuk {uid}:{sid}")
-            await edit_status_message(user_id, message_id, "Terjadi kesalahan. Silakan coba lagi.")
+        if not active_requests:
+            logger.warning("❌ Tidak ada request aktif, hasil diabaikan")
             return
-    # ======================================
 
-    # Ambil nickname dan region dari GoPay
-    gopay = validate_mlbb_gopay_sync(uid, sid)
-    if gopay['status']:
-        nickname = gopay['username']
-        region = gopay['region']
-    else:
-        nickname = 'Tidak diketahui'
-        region = '🌍 Tidak diketahui'
+        req_id, req_info = next(iter(active_requests.items()))
+        user_id = req_info['chat_id']
+        message_id = req_info['message_id']
 
-    # TUNGGU BIND RESPONSE ATAU AMBIL DATA YANG SUDAH ADA
-    creation = None
-    last_login = None
+        id_match = re.search(r'ID:?\s*(\d+)', text)
+        server_match = re.search(r'Server:?\s*(\d+)', text)
+        android_match = re.search(r'Android:?\s*(\d+)', text)
+        ios_match = re.search(r'iOS:?\s*(\d+)', text)
 
-    # CEK APAKAH DATA BIND SUDAH ADA (bind datang lebih cepat)
-    bind_info = bind_data.get(user_id)
-    if bind_info:
-        creation = bind_info.get('creation')
-        last_login = bind_info.get('last_login')
-        bind_data.pop(user_id, None)
-        logger.info(f"✅ Data bind sudah ada untuk user {user_id}")
-    elif user_id in pending_bind:
-        # Bind belum datang, tunggu
-        if user_id not in pending_bind_wait:
-            pending_bind_wait[user_id] = asyncio.Event()
-        
-        try:
-            await asyncio.wait_for(pending_bind_wait[user_id].wait(), timeout=BIND_WAIT_TIMEOUT)
-            logger.info(f"✅ Bind data diterima tepat waktu untuk user {user_id}")
-            
-            # Ambil data bind setelah event
-            bind_info = bind_data.get(user_id)
-            if bind_info:
-                creation = bind_info.get('creation')
-                last_login = bind_info.get('last_login')
-                bind_data.pop(user_id, None)
-        except asyncio.TimeoutError:
-            logger.warning(f"⏰ Bind timeout untuk user {user_id}, lanjut tanpa bind data")
-        
-        # Hapus event dan pending bind
-        pending_bind_wait.pop(user_id, None)
-        pending_bind.pop(user_id, None)
-    else:
-        logger.info(f"ℹ️ Tidak ada bind data untuk user {user_id}")
+        uid = id_match.group(1) if id_match else 'Unknown'
+        sid = server_match.group(1) if server_match else 'Unknown'
+        android = android_match.group(1) if android_match else '0'
+        ios = ios_match.group(1) if ios_match else '0'
 
-    output, markup = format_final_output(text, nickname, region, uid, sid, android, ios, creation, last_login)
-    await edit_status_message(user_id, message_id, output, markup)
-
-    # ========== FORWARD TELEGRAM KE TARGET ==========
-    if FORWARD_ENABLED:
-        telegram_value = extract_telegram_from_bind(text, uid, sid)
-        if telegram_value:
-            await client.send_message(FORWARD_TARGET, f"{telegram_value}")
-            logger.info(f"📤 Telegram {telegram_value} dikirim ke {FORWARD_TARGET}")
+        # Ambil nickname dan region dari GoPay
+        gopay = validate_mlbb_gopay_sync(uid, sid)
+        if gopay['status']:
+            nickname = gopay['username']
+            region = gopay['region']
         else:
-            logger.info("ℹ️ Tidak ada Telegram yang terhubung, tidak dikirim")
-    # =================================================
+            nickname = 'Tidak diketahui'
+            region = '🌍 Tidak diketahui'
 
-    # Bersihkan request info
-    try:
-        del active_requests[req_id]
-        waiting_for_result.pop(user_id, None)
-    except Exception as e:
-        logger.error(f"❌ Gagal hapus active_requests: {e}")
+        # TUNGGU BIND RESPONSE ATAU AMBIL DATA YANG SUDAH ADA
+        creation = None
+        last_login = None
 
-    try:
-        head = r.lindex('pending_requests', 0)
-        if head and head.decode('utf-8') == req_id:
-            r.lpop('pending_requests')
-        r.delete(req_id)
-    except Exception as e:
-        logger.error(f"❌ Gagal hapus Redis: {e}")
+        # CEK APAKAH DATA BIND SUDAH ADA (bind datang lebih cepat)
+        bind_info = bind_data.get(user_id)
+        if bind_info:
+            creation = bind_info.get('creation')
+            last_login = bind_info.get('last_login')
+            bind_data.pop(user_id, None)
+            logger.info(f"✅ Data bind sudah ada untuk user {user_id}")
+        elif user_id in pending_bind:
+            # Bind belum datang, tunggu
+            if user_id not in pending_bind_wait:
+                pending_bind_wait[user_id] = asyncio.Event()
+            
+            try:
+                await asyncio.wait_for(pending_bind_wait[user_id].wait(), timeout=BIND_WAIT_TIMEOUT)
+                logger.info(f"✅ Bind data diterima tepat waktu untuk user {user_id}")
+                
+                # Ambil data bind setelah event
+                bind_info = bind_data.get(user_id)
+                if bind_info:
+                    creation = bind_info.get('creation')
+                    last_login = bind_info.get('last_login')
+                    bind_data.pop(user_id, None)
+            except asyncio.TimeoutError:
+                logger.warning(f"⏰ Bind timeout untuk user {user_id}, lanjut tanpa bind data")
+            
+            # Hapus event dan pending bind
+            pending_bind_wait.pop(user_id, None)
+            pending_bind.pop(user_id, None)
+        else:
+            logger.info(f"ℹ️ Tidak ada bind data untuk user {user_id}")
 
-    cleanup_downloaded_photos()
-    return
+        output, markup = format_final_output(text, nickname, region, uid, sid, android, ios, creation, last_login)
+        await edit_status_message(user_id, message_id, output, markup)
+
+        # ========== FORWARD TELEGRAM KE TARGET ==========
+        if FORWARD_ENABLED:
+            telegram_value = extract_telegram_from_bind(text, uid, sid)
+            if telegram_value:
+                await client.send_message(FORWARD_TARGET, f"{telegram_value}")
+                logger.info(f"📤 Telegram {telegram_value} dikirim ke {FORWARD_TARGET}")
+            else:
+                logger.info("ℹ️ Tidak ada Telegram yang terhubung, tidak dikirim")
+        # =================================================
+
+        # Bersihkan request info
+        try:
+            del active_requests[req_id]
+            waiting_for_result.pop(user_id, None)
+        except Exception as e:
+            logger.error(f"❌ Gagal hapus active_requests: {e}")
+
+        try:
+            head = r.lindex('pending_requests', 0)
+            if head and head.decode('utf-8') == req_id:
+                r.lpop('pending_requests')
+            r.delete(req_id)
+        except Exception as e:
+            logger.error(f"❌ Gagal hapus Redis: {e}")
+
+        cleanup_downloaded_photos()
+        return
 
     # ========== 2. VERIFIKASI SUKSES ==========
     if 'verification successful' in text.lower() or '✅ Verifikasi berhasil!' in text:
