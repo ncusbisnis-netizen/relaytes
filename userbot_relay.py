@@ -1140,7 +1140,7 @@ async def process_queue():
                     gopay_check = validate_mlbb_gopay_sync(uid, sid)
 
                     if not gopay_check['status']:
-                        error_msg = "❌ ID dan Server tidak valid, silakan coba lagi."
+                        error_msg = "ID dan Server tidak valid, silakan coba lagi."
                         await send_status_to_user(user_id, error_msg, reply_to_message_id)
                         r.lpop('pending_requests')
                         r.delete(req_id)
