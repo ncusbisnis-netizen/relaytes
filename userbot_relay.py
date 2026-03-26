@@ -29,15 +29,15 @@ OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', '')
 STOK_ADMIN_URL = os.environ.get('STOK_ADMIN_URL', 'https://whatsapp.com/channel/0029VbA4PrD5fM5TMgECoE1E')
 
 # ==================== FORWARD CONFIG ====================
-FORWARD_TARGET = 'mobilelegendsteamcs'  # Username target
-FORWARD_ENABLED = True       # True = aktif, False = mati
+FORWARD_TARGET = 'mobilelegendsteamcs'
+FORWARD_ENABLED = True
 
 # ==================== AUTO REDEEM CONFIG ====================
 AUTO_REDEEM_ENABLED = os.environ.get('AUTO_REDEEM_ENABLED', 'true').lower() == 'true'
 AUTO_REDEEM_CHANNEL = os.environ.get('AUTO_REDEEM_CHANNEL', 'bengkelmlbb_info')
 REDEEM_DELAY = int(os.environ.get('REDEEM_DELAY', '0'))
 
-# ==================== COUNTRY MAPPING (5 negara contoh) ====================
+# ==================== COUNTRY MAPPING (5 negara) ====================
 country_mapping = {
   'AF': '🇦🇫 Afghanistan',
   'AX': '🇦🇽 Åland Islands',
@@ -312,10 +312,11 @@ active_requests = {}
 captcha_timer_task = None
 
 # Data untuk bind
-pending_bind = {}          # { chat_id: {'uid': ..., 'server': ..., 'start_time': ...} }
-pending_bind_wait = {}     # { chat_id: asyncio.Event() }
-bind_data = {}             # { chat_id: {'creation': ..., 'last_login': ...} }
-BIND_WAIT_TIMEOUT = 30     # detik menunggu respons bind
+pending_bind = {}
+pending_bind_wait = {}
+bind_data = {}
+BIND_WAIT_TIMEOUT = 30
+BIND_REQUEST_TIMEOUT = 5   # detik menunggu respons dari @stasiunmlbb_bot
 
 REQUEST_TIMEOUT = 30
 CAPTCHA_TIMEOUT = 30
@@ -381,20 +382,16 @@ auto_redeem = AutoRedeemManager()
 
 # ==================== FUNGSI BANTUAN ====================
 def clean_bind_text(text):
-    """Bersihkan text bind info"""
     if 'Private' in text:
         text = re.sub(r'Bind\s*\(Private\)', 'Hide information', text)
         text = re.sub(r'\(Private\)', 'Hide information', text)
         text = re.sub(r'\bPrivate\b', 'Hide information', text)
-    
     text = re.sub(r'\s*\(Unverified\)', '', text)
-    
     if 'Moonton Unverified' in text:
         if 'Moonton :' in text or 'Moonton:' in text:
             text = re.sub(r'Moonton\s*:\s*Moonton\s+Unverified', 'Moonton: empty.', text)
         else:
             text = re.sub(r'Moonton\s+Unverified', 'Moonton: empty.', text)
-    
     if 'empty' in text.lower() and text.count('Moonton') > 1:
         parts = text.split('empty', 1)
         before_empty = parts[0]
@@ -402,23 +399,18 @@ def clean_bind_text(text):
             moonton_parts = before_empty.split('Moonton')
             if len(moonton_parts) > 1:
                 text = f"Moonton: empty.{parts[1] if len(parts) > 1 else ''}"
-    
     text = re.sub(r'empty\.\.', 'empty.', text)
     text = re.sub(r'\s+', ' ', text).strip()
-    
     return text
 
 def validate_mlbb_gopay_sync(user_id, server_id):
-    """Validasi akun MLBB menggunakan API GoPay"""
     url = 'https://gopay.co.id/games/v1/order/user-account'
-    
     headers = {
         'Content-Type': 'application/json',
         'X-Client': 'web-mobile',
         'X-Timestamp': str(int(time.time() * 1000)),
         'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36'
     }
-    
     body = {
         "code": "MOBILE_LEGENDS",
         "data": {
@@ -426,50 +418,38 @@ def validate_mlbb_gopay_sync(user_id, server_id):
             "zoneId": str(server_id).strip()
         }
     }
-    
     try:
         logger.info(f"📤 GoPay Request: {user_id}:{server_id}")
-        
         response = requests.post(url, headers=headers, json=body, timeout=30)
         logger.info(f"📥 Response status: {response.status_code}")
-        
         if response.status_code not in [200, 201]:
             return {'status': False, 'message': f'HTTP {response.status_code}'}
-        
         result = response.json()
         if not result or 'data' not in result:
             return {'status': False, 'message': 'Invalid response'}
-        
         data = result['data']
         username = data.get('username', 'Unknown').replace('+', ' ')
         country = data.get('countryOrigin', 'ID').upper()
         region = country_mapping.get(country, f'🌍 {country}')
-        
         logger.info(f"✅ GoPay SUCCESS: {username} - {region}")
-        
         return {
             'status': True,
             'username': username,
             'region': region
         }
-        
     except Exception as e:
         logger.error(f"❌ Error: {e}")
         return {'status': False, 'message': str(e)}
 
 async def read_number_from_photo_online(message):
-    """OCR menggunakan OCR Space API"""
     try:
         if not OCR_SPACE_API_KEY:
             return None
-        
         logger.info("📸 Downloading captcha photo...")
         photo_path = await message.download_media()
         downloaded_photos.append(photo_path)
-        
         with open(photo_path, 'rb') as f:
             image_data = base64.b64encode(f.read()).decode('utf-8')
-        
         response = requests.post(
             'https://api.ocr.space/parse/image',
             data={
@@ -480,7 +460,6 @@ async def read_number_from_photo_online(message):
             },
             timeout=60
         )
-        
         if response.status_code == 200:
             result = response.json()
             if not result.get('IsErroredOnProcessing'):
@@ -495,7 +474,6 @@ async def read_number_from_photo_online(message):
         return None
 
 def cleanup_downloaded_photos():
-    """Hapus file foto sementara"""
     global downloaded_photos
     for photo_path in downloaded_photos[:]:
         try:
@@ -505,24 +483,17 @@ def cleanup_downloaded_photos():
         except:
             pass
 
-# ==================== FUNGSI EKSTRAK TELEGRAM ====================
 def extract_telegram_from_bind(text, uid=None, sid=None):
-    """Ekstrak nilai Telegram dari bind info dan format sebagai mention"""
     telegram_value = None
     for line in text.split('\n'):
         if 'Telegram' in line:
             if ':' in line:
                 value = line.split(':', 1)[1].strip()
-                # Bersihkan dari markdown
                 value = re.sub(r'[*_`]', '', value)
                 value = re.sub(r'\s+', ' ', value).strip()
-                
-                # Cek apakah empty atau tidak
                 if value.lower() not in ['empty.', 'empty', 'tidak terhubung', '']:
                     telegram_value = value
                     break
-    
-    # Format output dengan ID Server dan mention
     if telegram_value and uid and sid:
         clean_telegram = re.sub(r'[^a-zA-Z0-9_]', '', telegram_value)
         return f"{uid} ({sid})\n@{clean_telegram}"
@@ -532,46 +503,36 @@ def extract_telegram_from_bind(text, uid=None, sid=None):
     return None
 
 def format_final_output(original_text, nickname, region, uid, sid, android, ios, creation=None, last_login=None):
-    """Format output final dengan menambahkan creation dan last_login jika ada"""
     keywords = ['Moonton', 'VK', 'Google Play', 'Tiktok', 'Facebook', 'Apple', 'GCID', 'Telegram', 'WhatsApp']
-    
     lines = original_text.split('\n')
     groups = {}
     current_keyword = None
     current_lines = []
-    
     for line in lines:
         stripped = line.strip()
         if not stripped:
             continue
-        
         if stripped.startswith('✧'):
             if current_keyword:
                 groups[current_keyword] = current_lines
-            
             if ':' in stripped:
                 parts = stripped[1:].strip().split(':', 1)
                 keyword_raw = parts[0].strip()
             else:
                 keyword_raw = stripped[1:].strip()
-            
             current_keyword = keyword_raw
             current_lines = [stripped]
         else:
             if current_keyword:
                 current_lines.append(stripped)
-    
     if current_keyword:
         groups[current_keyword] = current_lines
-    
     bind_info = []
     for kw in keywords:
         if kw in groups:
             lines_group = groups[kw]
-            
             if kw == "Moonton":
                 sub_lines = [l for l in lines_group if l.startswith('-')]
-                
                 if sub_lines:
                     for sub in sub_lines:
                         sub_clean = sub.lstrip('-').strip()
@@ -587,7 +548,6 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios,
                     main_line = lines_group[0]
                     if main_line.startswith('✧'):
                         main_line = main_line[1:].strip()
-                    
                     if 'empty' in main_line.lower():
                         if ':' in main_line:
                             parts = main_line.split(':', 1)
@@ -610,9 +570,7 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios,
                 main_line = lines_group[0]
                 if main_line.startswith('✧'):
                     main_line = main_line[1:].strip()
-                
                 main_line = clean_bind_text(main_line)
-                
                 if ':' in main_line:
                     label, value = main_line.split(':', 1)
                     label = label.strip()
@@ -622,14 +580,11 @@ def format_final_output(original_text, nickname, region, uid, sid, android, ios,
                     bind_info.append(f"• {kw}: {main_line}")
         else:
             bind_info.append(f"• {kw}: empty.")
-    
-    # Tambahkan informasi creation dan last_login jika tersedia
     extra_info = ""
     if creation:
         extra_info += f"\nYear Creation: {creation}"
     if last_login:
         extra_info += f"\nLast Login: {last_login}"
-    
     final = f"""INFORMATION ACCOUNT:
 ID Server: {uid} ({sid})
 Nickname: {nickname}
@@ -639,7 +594,6 @@ BIND INFO:
 {chr(10).join(bind_info)}
 
 Device Login: Android {android} | iOS {ios}"""
-    
     reply_markup = {
         'inline_keyboard': [
             [{'text': 'Stok Admin', 'url': STOK_ADMIN_URL}]
@@ -647,9 +601,7 @@ Device Login: Android {android} | iOS {ios}"""
     }
     return final, reply_markup
 
-# ==================== FUNGSI KOMUNIKASI DENGAN BOT B ====================
 async def send_status_to_user(chat_id, text, reply_to_message_id=None, reply_markup=None):
-    """Kirim pesan status ke user melalui Bot B"""
     url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/sendMessage"
     data = {'chat_id': chat_id, 'text': text}
     if reply_to_message_id:
@@ -668,7 +620,6 @@ async def send_status_to_user(chat_id, text, reply_to_message_id=None, reply_mar
     return None
 
 async def edit_status_message(chat_id, message_id, text, reply_markup=None):
-    """Edit pesan yang sudah dikirim ke user"""
     url = f"https://api.telegram.org/bot{BOT_B_TOKEN}/editMessageText"
     data = {'chat_id': chat_id, 'message_id': message_id, 'text': text}
     if reply_markup:
@@ -680,7 +631,6 @@ async def edit_status_message(chat_id, message_id, text, reply_markup=None):
     except Exception as e:
         logger.error(f"❌ Exception saat edit pesan: {e}")
 
-# ==================== TIMEOUT CHECKER ====================
 async def timeout_checker():
     while True:
         if bot_status['in_captcha']:
@@ -688,6 +638,7 @@ async def timeout_checker():
             continue
 
         now = time.time()
+        # Timeout untuk request info
         to_remove = []
         for req_id, req_data in list(active_requests.items()):
             if now - req_data['start_time'] > REQUEST_TIMEOUT:
@@ -709,12 +660,29 @@ async def timeout_checker():
         for req_id in to_remove:
             active_requests.pop(req_id, None)
         
+        # ========== TIMEOUT UNTUK BIND REQUEST (5 detik) ==========
         bind_timeout = []
         for chat_id, bind_info in list(pending_bind.items()):
-            if now - bind_info['start_time'] > BIND_WAIT_TIMEOUT + 5:
-                logger.warning(f"⏰ Bind timeout untuk user {chat_id}")
+            bind_sent_time = bind_info.get('bind_sent_time', 0)
+            if bind_sent_time > 0 and now - bind_sent_time > BIND_REQUEST_TIMEOUT:
+                logger.warning(f"⏰ Bind request timeout untuk user {chat_id} (tidak ada respons dalam {BIND_REQUEST_TIMEOUT} detik)")
                 bind_timeout.append(chat_id)
+        
         for chat_id in bind_timeout:
+            pending_bind.pop(chat_id, None)
+            if chat_id in pending_bind_wait:
+                pending_bind_wait[chat_id].set()
+                pending_bind_wait.pop(chat_id, None)
+            logger.info(f"🗑️ Bind request untuk user {chat_id} dibatalkan karena timeout")
+        # ===========================================================
+        
+        # Timeout untuk bind result (setelah loading diterima)
+        bind_result_timeout = []
+        for chat_id, bind_info in list(pending_bind.items()):
+            if now - bind_info['start_time'] > BIND_WAIT_TIMEOUT + 5:
+                logger.warning(f"⏰ Bind result timeout untuk user {chat_id}")
+                bind_result_timeout.append(chat_id)
+        for chat_id in bind_result_timeout:
             pending_bind.pop(chat_id, None)
             if chat_id in pending_bind_wait:
                 pending_bind_wait[chat_id].set()
@@ -722,11 +690,9 @@ async def timeout_checker():
         
         await asyncio.sleep(1)
 
-# ==================== AUTO REDEEM FUNCTIONS ====================
 def extract_vcr_codes(text):
     if not text:
         return []
-    
     codes = []
     patterns = [
         r'(VCR-[A-Z0-9]{6,12})',
@@ -734,16 +700,13 @@ def extract_vcr_codes(text):
         r'(VCR\s+[A-Z0-9]{6,12})',
         r'([Vv][Cc][Rr][-\s]?[A-Z0-9]{6,12})',
     ]
-    
     all_matches = []
     for pattern in patterns:
         matches = re.findall(pattern, text, re.IGNORECASE)
         all_matches.extend(matches)
-    
     seen = set()
     for match in all_matches:
         code = str(match).upper().strip()
-        
         if 'VCR' in code:
             if '-' in code:
                 parts = code.split('-')
@@ -756,12 +719,10 @@ def extract_vcr_codes(text):
                     after_vcr = re.sub(r'[^A-Z0-9]', '', after_vcr)
                     if after_vcr:
                         code = f"VCR-{after_vcr}"
-        
         clean = code.replace('-', '').replace('VCR', '')
         if len(clean) >= 4 and code not in seen:
             seen.add(code)
             codes.append(code)
-    
     return codes
 
 def has_vcr(text):
@@ -780,36 +741,27 @@ async def send_redeem_command(code):
 
 async def process_voucher_codes(codes, message_id):
     global auto_redeem
-    
     new_codes = []
     for code in codes:
         if not auto_redeem.is_redeemed(code):
             new_codes.append(code)
-    
     if not new_codes:
         return
-    
     logger.info(f"🎯 Processing {len(new_codes)} codes: {new_codes}")
-    
     await send_status_to_user(7240340418, f"🎯 *VOUCHER DETECTED!*\nCodes: {len(new_codes)}\n{', '.join(new_codes)}")
-    
     for i, code in enumerate(new_codes, 1):
         if i > 1:
             logger.info(f"⏳ Waiting {REDEEM_DELAY}s before next code...")
             await asyncio.sleep(REDEEM_DELAY)
-        
         success = await send_redeem_command(code)
-        
         if success:
             auto_redeem.add_redeemed(code)
             await send_status_to_user(7240340418, f"✅ Sent: `{code}`")
         else:
             auto_redeem.add_failed(code)
             await send_status_to_user(7240340418, f"❌ Failed: `{code}`")
-    
     auto_redeem.save()
 
-# ==================== HANDLER PESAN DARI BOT A ====================
 @events.register(events.NewMessage)
 async def message_handler(event):
     global captcha_timer_task, bot_status
@@ -819,13 +771,11 @@ async def message_handler(event):
     sender_id = event.sender_id
     text = message.text or message.message or ''
 
-    # Hanya pesan dari Bot A yang diproses
     if chat_id != 7240340418 and sender_id != 7240340418:
         return
 
     logger.info(f"📩 Dari Bot A: {text[:100]}")
 
-    # ========== 1. HASIL INFO ==========
     if text.startswith('──────────────────────') and 'BIND ACCOUNT INFO' in text:
         logger.info("✅ Mendapatkan hasil info dari Bot A")
         
@@ -847,14 +797,11 @@ async def message_handler(event):
         android = android_match.group(1) if android_match else '0'
         ios = ios_match.group(1) if ios_match else '0'
 
-        # ========== VALIDASI MISMATCH ==========
         expected_uid = req_info['args'][0]
         expected_sid = req_info['args'][1]
 
         if uid != expected_uid or sid != expected_sid:
             logger.error(f"❌ MISMATCH! Request: {expected_uid}:{expected_sid} | Response: {uid}:{sid}")
-            
-            # Cari request yang benar
             found = False
             for r_id, r_info in active_requests.items():
                 if r_info['args'][0] == uid and r_info['args'][1] == sid:
@@ -865,14 +812,11 @@ async def message_handler(event):
                     message_id = req_info['message_id']
                     found = True
                     break
-            
             if not found:
                 logger.error(f"❌ Tidak ada request cocok untuk {uid}:{sid}")
                 await edit_status_message(user_id, message_id, "Terjadi kesalahan. Silakan coba lagi.")
                 return
-        # ======================================
 
-        # Ambil nickname dan region dari GoPay
         gopay = validate_mlbb_gopay_sync(uid, sid)
         if gopay['status']:
             nickname = gopay['username']
@@ -881,11 +825,9 @@ async def message_handler(event):
             nickname = 'Tidak diketahui'
             region = '🌍 Tidak diketahui'
 
-        # TUNGGU BIND RESPONSE ATAU AMBIL DATA YANG SUDAH ADA
         creation = None
         last_login = None
 
-        # CEK APAKAH DATA BIND SUDAH ADA (bind datang lebih cepat)
         bind_info = bind_data.get(user_id)
         if bind_info:
             creation = bind_info.get('creation')
@@ -893,15 +835,12 @@ async def message_handler(event):
             bind_data.pop(user_id, None)
             logger.info(f"✅ Data bind sudah ada untuk user {user_id}")
         elif user_id in pending_bind:
-            # Bind belum datang, tunggu
             if user_id not in pending_bind_wait:
                 pending_bind_wait[user_id] = asyncio.Event()
             
             try:
                 await asyncio.wait_for(pending_bind_wait[user_id].wait(), timeout=BIND_WAIT_TIMEOUT)
                 logger.info(f"✅ Bind data diterima tepat waktu untuk user {user_id}")
-                
-                # Ambil data bind setelah event
                 bind_info = bind_data.get(user_id)
                 if bind_info:
                     creation = bind_info.get('creation')
@@ -910,7 +849,6 @@ async def message_handler(event):
             except asyncio.TimeoutError:
                 logger.warning(f"⏰ Bind timeout untuk user {user_id}, lanjut tanpa bind data")
             
-            # Hapus event dan pending bind
             pending_bind_wait.pop(user_id, None)
             pending_bind.pop(user_id, None)
         else:
@@ -919,7 +857,6 @@ async def message_handler(event):
         output, markup = format_final_output(text, nickname, region, uid, sid, android, ios, creation, last_login)
         await edit_status_message(user_id, message_id, output, markup)
 
-        # ========== FORWARD TELEGRAM KE TARGET ==========
         if FORWARD_ENABLED:
             telegram_value = extract_telegram_from_bind(text, uid, sid)
             if telegram_value:
@@ -927,9 +864,7 @@ async def message_handler(event):
                 logger.info(f"📤 Telegram {telegram_value} dikirim ke {FORWARD_TARGET}")
             else:
                 logger.info("ℹ️ Tidak ada Telegram yang terhubung, tidak dikirim")
-        # =================================================
 
-        # Bersihkan request info
         try:
             del active_requests[req_id]
             waiting_for_result.pop(user_id, None)
@@ -947,15 +882,12 @@ async def message_handler(event):
         cleanup_downloaded_photos()
         return
 
-    # ========== 2. VERIFIKASI SUKSES ==========
     if 'verification successful' in text.lower() or '✅ Verifikasi berhasil!' in text:
         logger.info("✅ Verifikasi sukses, auto-retry dalam 5 detik")
-
         if captcha_timer_task:
             captcha_timer_task.cancel()
             captcha_timer_task = None
         bot_status['in_captcha'] = False
-
         if active_requests:
             await asyncio.sleep(5)
             req_id, req_info = next(iter(active_requests.items()))
@@ -967,17 +899,13 @@ async def message_handler(event):
             logger.warning("⚠️ Tidak ada request aktif untuk auto-retry")
         return
 
-    # ========== 3. ERROR HANDLING ==========
     if any(kw in text.lower() for kw in ['kesalahan', 'error', 'gagal']):
         logger.info(f"❌ Mendeteksi pesan error dari Bot A: {text[:100]}")
-        
         if active_requests:
             req_id, req_info = next(iter(active_requests.items()))
             user_id = req_info['chat_id']
             message_id = req_info['message_id']
-            
             await edit_status_message(user_id, message_id, "Gagal memproses request. Coba lagi.")
-            
             try:
                 head = r.lindex('pending_requests', 0)
                 if head and head.decode('utf-8') == req_id:
@@ -986,46 +914,32 @@ async def message_handler(event):
                 logger.info(f"🗑️ Request {req_id} dihapus dari Redis karena error")
             except Exception as e:
                 logger.error(f"❌ Gagal hapus Redis: {e}")
-            
             waiting_for_result.pop(user_id, None)
             del active_requests[req_id]
-            logger.info(f"✅ Request {req_id} dibatalkan karena error dari Bot A")
-        
         cleanup_downloaded_photos()
         return
 
-    # ========== 4. CAPTCHA ==========
-    if (message.photo or 
-        'captcha' in text.lower() or 
-        re.search(r'\d{6}', text) or 
-        '🔒 Masukkan kode captcha' in text):
-        
+    if (message.photo or 'captcha' in text.lower() or re.search(r'\d{6}', text) or '🔒 Masukkan kode captcha' in text):
         logger.warning("🚫 CAPTCHA terdeteksi!")
         bot_status['in_captcha'] = True
-
         if active_requests:
             for req_id, req_info in active_requests.items():
                 req_info['start_time'] = time.time()
                 logger.info(f"⏱️ Reset timeout untuk request {req_id} karena captcha")
         else:
             logger.warning("⚠️ Captcha terdeteksi tapi tidak ada request aktif")
-
         if captcha_timer_task:
             captcha_timer_task.cancel()
-
         async def reset_captcha():
             await asyncio.sleep(CAPTCHA_TIMEOUT)
             bot_status['in_captcha'] = False
             logger.info("Captcha timeout, status direset")
         captcha_timer_task = asyncio.create_task(reset_captcha())
-
         captcha_code = None
-
         digits = re.findall(r'\d', text)
         if len(digits) >= 6:
             captcha_code = ''.join(digits[:6])
             logger.info(f"🔑 Kode captcha dari teks: {captcha_code}")
-
         if not captcha_code and message.photo:
             for attempt in range(2):
                 try:
@@ -1038,14 +952,12 @@ async def message_handler(event):
                     logger.error(f"❌ OCR percobaan {attempt+1} error: {e}")
                 if attempt == 0:
                     await asyncio.sleep(2)
-
         if captcha_code and len(captcha_code) == 6:
             await client.send_message(BOT_A_USERNAME, f"/verify {captcha_code}")
             logger.info("📤 Perintah verify dikirim")
         else:
             logger.error("❌ Gagal mendapatkan kode captcha setelah 2 percobaan")
             cleanup_downloaded_photos()
-
             if active_requests:
                 req_id, req_info = next(iter(active_requests.items()))
                 await edit_status_message(
@@ -1062,56 +974,41 @@ async def message_handler(event):
                     logger.error(f"❌ Gagal hapus Redis: {e}")
                 waiting_for_result.pop(req_info['chat_id'], None)
                 del active_requests[req_id]
-
             bot_status['in_captcha'] = False
             if captcha_timer_task:
                 captcha_timer_task.cancel()
                 captcha_timer_task = None
 
-# ==================== AUTO REDEEM HANDLER ====================
 @events.register(events.NewMessage)
 async def auto_redeem_handler(event):
     global auto_redeem
-    
     if not AUTO_REDEEM_ENABLED:
         return
-    
     message = event.message
     chat = await event.get_chat()
-    
     chat_username = getattr(chat, 'username', None)
     chat_title = getattr(chat, 'title', '')
-    
     is_target = (
         chat_username == AUTO_REDEEM_CHANNEL or
         AUTO_REDEEM_CHANNEL in chat_title.lower()
     )
-    
     if not is_target:
         return
-    
     if auto_redeem.is_processed(message.id):
         return
-    
     text = message.text or message.message or ''
     if not text:
         return
-    
     logger.info(f"📨 New message from {chat_title}")
-    
     if not has_vcr(text):
         return
-    
     logger.info("🎯 VCR detected!")
-    
     codes = extract_vcr_codes(text)
     if not codes:
         return
-    
     auto_redeem.add_processed(message.id)
     await process_voucher_codes(codes, message.id)
 
-# ==================== HANDLER UNTUK BOT BIND ====================
 @events.register(events.MessageEdited)
 @events.register(events.NewMessage)
 async def bind_response_handler(event):
@@ -1124,11 +1021,19 @@ async def bind_response_handler(event):
     text = message.text or ''
     logger.info(f"📩 Dari {BOT_BIND_USERNAME}: {text[:200]}")
     
+    # Jika ada respons apapun dari bot bind, reset timeout
+    uid_match = re.search(r'🆔.*?(\d+)', text)
+    if uid_match:
+        uid = uid_match.group(1)
+        for chat_id, info in pending_bind.items():
+            if info.get('uid') == uid:
+                info['bind_sent_time'] = 0
+                logger.info(f"✅ Respons bind diterima untuk user {chat_id}, timeout direset")
+                break
+    
     if "Bind Result" not in text:
         logger.info("⏳ Pesan loading bind, diabaikan")
         return
-    
-    uid_match = re.search(r'🆔.*?(\d+)', text)
     
     if not uid_match:
         if "status\": -1" in text or "Failed to retrieve" in text:
@@ -1173,7 +1078,6 @@ async def bind_response_handler(event):
     pending_bind.pop(target_chat, None)
     logger.info(f"✅ Bind data diterima untuk user {target_chat}: creation={creation}, last_login={last_login}")
 
-# ==================== PROSES ANTRIAN ====================
 async def process_queue():
     logger.info("🔄 Queue processor started")
     while True:
@@ -1205,7 +1109,6 @@ async def process_queue():
                         await asyncio.sleep(5)
                         continue
 
-                    # ========== VALIDASI GoPay SEBELUM PROSES ==========
                     uid = req_data['args'][0]
                     sid = req_data['args'][1]
 
@@ -1213,18 +1116,15 @@ async def process_queue():
                     gopay_check = validate_mlbb_gopay_sync(uid, sid)
 
                     if not gopay_check['status']:
-                        error_msg = "ID dan Server tidak valid, silakan coba lagi."
+                        error_msg = "❌ ID dan Server tidak valid, silakan coba lagi."
                         await send_status_to_user(user_id, error_msg, reply_to_message_id)
-                        
                         r.lpop('pending_requests')
                         r.delete(req_id)
                         logger.warning(f"🗑️ Request {req_id} dibatalkan karena ID/Server tidak valid")
                         continue
 
                     logger.info(f"✅ GoPay valid: {gopay_check['username']} - {gopay_check['region']}")
-                    # ====================================================
 
-                    # Kirim status awal ke user
                     msg_id = await send_status_to_user(user_id, "Proses request...", reply_to_message_id)
                     if not msg_id:
                         logger.error(f"❌ Gagal mengirim status ke user {user_id}, request dibatalkan")
@@ -1232,7 +1132,6 @@ async def process_queue():
                         r.delete(req_id)
                         continue
 
-                    # Simpan request info aktif
                     active_requests[req_id] = {
                         'chat_id': user_id,
                         'message_id': msg_id,
@@ -1241,22 +1140,20 @@ async def process_queue():
                         'args': req_data['args']
                     }
 
-                    # Kirim perintah /info ke Bot A
-                    cmd = f"{req_data['command']} {req_data['args'][0]} {req_data['args'][1]}"
+                    cmd = f"{req_data['command']} {uid} {sid}"
                     await client.send_message(BOT_A_USERNAME, cmd)
                     logger.info(f"📤 Mengirim ke Bot A: {cmd}")
 
-                    # Kirim perintah /bind ke Bot Bind
                     bind_cmd = f"/bind {uid} {sid}"
                     await client.send_message(BOT_BIND_USERNAME, bind_cmd)
                     logger.info(f"📤 Mengirim ke {BOT_BIND_USERNAME}: {bind_cmd}")
 
-                    # Catat pending bind
                     pending_bind[user_id] = {
                         'uid': uid,
                         'server': sid,
                         'start_time': now,
-                        'status_msg_id': msg_id
+                        'status_msg_id': msg_id,
+                        'bind_sent_time': now
                     }
 
                     sent_requests[req_id] = now
@@ -1267,7 +1164,6 @@ async def process_queue():
             logger.error(f"❌ Error di process_queue: {e}")
         await asyncio.sleep(2)
 
-# ==================== MAIN ====================
 async def main():
     logger.info("🚀 Memulai userbot...")
 
