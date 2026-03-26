@@ -37,7 +37,7 @@ AUTO_REDEEM_ENABLED = os.environ.get('AUTO_REDEEM_ENABLED', 'true').lower() == '
 AUTO_REDEEM_CHANNEL = os.environ.get('AUTO_REDEEM_CHANNEL', 'bengkelmlbb_info')
 REDEEM_DELAY = int(os.environ.get('REDEEM_DELAY', '0'))
 
-# ==================== COUNTRY MAPPING (Contoh 5 negara) ====================
+# ==================== COUNTRY MAPPING (5 negara contoh) ====================
 country_mapping = {
   'AF': '🇦🇫 Afghanistan',
   'AX': '🇦🇽 Åland Islands',
@@ -524,7 +524,6 @@ def extract_telegram_from_bind(text, uid=None, sid=None):
     
     # Format output dengan ID Server dan mention
     if telegram_value and uid and sid:
-        # Hapus karakter aneh jika ada
         clean_telegram = re.sub(r'[^a-zA-Z0-9_]', '', telegram_value)
         return f"{uid} ({sid})\n@{clean_telegram}"
     elif telegram_value:
@@ -689,7 +688,6 @@ async def timeout_checker():
             continue
 
         now = time.time()
-        # Timeout untuk request info
         to_remove = []
         for req_id, req_data in list(active_requests.items()):
             if now - req_data['start_time'] > REQUEST_TIMEOUT:
@@ -711,7 +709,6 @@ async def timeout_checker():
         for req_id in to_remove:
             active_requests.pop(req_id, None)
         
-        # Timeout untuk bind request
         bind_timeout = []
         for chat_id, bind_info in list(pending_bind.items()):
             if now - bind_info['start_time'] > BIND_WAIT_TIMEOUT + 5:
@@ -727,7 +724,6 @@ async def timeout_checker():
 
 # ==================== AUTO REDEEM FUNCTIONS ====================
 def extract_vcr_codes(text):
-    """Ekstrak semua kode VCR dari teks"""
     if not text:
         return []
     
@@ -769,11 +765,9 @@ def extract_vcr_codes(text):
     return codes
 
 def has_vcr(text):
-    """Cek apakah ada VCR di teks"""
     return bool(re.search(r'[Vv][Cc][Rr]', text))
 
 async def send_redeem_command(code):
-    """Kirim command redeem ke bot"""
     try:
         cmd = f"/redeem {code}"
         logger.info(f"🔄 Sending: {cmd}")
@@ -785,7 +779,6 @@ async def send_redeem_command(code):
         return False
 
 async def process_voucher_codes(codes, message_id):
-    """Proses semua kode voucher yang ditemukan"""
     global auto_redeem
     
     new_codes = []
@@ -853,6 +846,31 @@ async def message_handler(event):
         sid = server_match.group(1) if server_match else 'Unknown'
         android = android_match.group(1) if android_match else '0'
         ios = ios_match.group(1) if ios_match else '0'
+
+        # ========== VALIDASI MISMATCH ==========
+        expected_uid = req_info['args'][0]
+        expected_sid = req_info['args'][1]
+
+        if uid != expected_uid or sid != expected_sid:
+            logger.error(f"❌ MISMATCH! Request: {expected_uid}:{expected_sid} | Response: {uid}:{sid}")
+            
+            # Cari request yang benar
+            found = False
+            for r_id, r_info in active_requests.items():
+                if r_info['args'][0] == uid and r_info['args'][1] == sid:
+                    logger.info(f"✅ Menemukan request yang cocok: {r_id}")
+                    req_id = r_id
+                    req_info = r_info
+                    user_id = req_info['chat_id']
+                    message_id = req_info['message_id']
+                    found = True
+                    break
+            
+            if not found:
+                logger.error(f"❌ Tidak ada request cocok untuk {uid}:{sid}")
+                await edit_status_message(user_id, message_id, "Terjadi kesalahan. Silakan coba lagi.")
+                return
+        # ======================================
 
         # Ambil nickname dan region dari GoPay
         gopay = validate_mlbb_gopay_sync(uid, sid)
@@ -949,7 +967,7 @@ async def message_handler(event):
             logger.warning("⚠️ Tidak ada request aktif untuk auto-retry")
         return
 
-    # ========== 3. ERROR HANDLING (LANGSUNG BATALKAN) ==========
+    # ========== 3. ERROR HANDLING ==========
     if any(kw in text.lower() for kw in ['kesalahan', 'error', 'gagal']):
         logger.info(f"❌ Mendeteksi pesan error dari Bot A: {text[:100]}")
         
@@ -958,10 +976,8 @@ async def message_handler(event):
             user_id = req_info['chat_id']
             message_id = req_info['message_id']
             
-            # Edit pesan status user dengan pesan gagal
             await edit_status_message(user_id, message_id, "Gagal memproses request. Coba lagi.")
             
-            # Hapus dari Redis
             try:
                 head = r.lindex('pending_requests', 0)
                 if head and head.decode('utf-8') == req_id:
@@ -971,12 +987,10 @@ async def message_handler(event):
             except Exception as e:
                 logger.error(f"❌ Gagal hapus Redis: {e}")
             
-            # Hapus dari waiting flag dan active_requests
             waiting_for_result.pop(user_id, None)
             del active_requests[req_id]
             logger.info(f"✅ Request {req_id} dibatalkan karena error dari Bot A")
         
-        # Bersihkan file foto jika ada
         cleanup_downloaded_photos()
         return
 
@@ -1007,13 +1021,11 @@ async def message_handler(event):
 
         captcha_code = None
 
-        # Cek di teks
         digits = re.findall(r'\d', text)
         if len(digits) >= 6:
             captcha_code = ''.join(digits[:6])
             logger.info(f"🔑 Kode captcha dari teks: {captcha_code}")
 
-        # OCR jika ada foto
         if not captcha_code and message.photo:
             for attempt in range(2):
                 try:
@@ -1059,7 +1071,6 @@ async def message_handler(event):
 # ==================== AUTO REDEEM HANDLER ====================
 @events.register(events.NewMessage)
 async def auto_redeem_handler(event):
-    """Handler auto redeem dari channel"""
     global auto_redeem
     
     if not AUTO_REDEEM_ENABLED:
@@ -1104,26 +1115,21 @@ async def auto_redeem_handler(event):
 @events.register(events.MessageEdited)
 @events.register(events.NewMessage)
 async def bind_response_handler(event):
-    """Menangkap respons dari @stasiunmlbb_bot (termasuk pesan yang diedit)"""
     message = event.message
     sender = await message.get_sender()
     
-    # Hanya dari bot bind
     if not sender or sender.username != BOT_BIND_USERNAME:
         return
     
     text = message.text or ''
     logger.info(f"📩 Dari {BOT_BIND_USERNAME}: {text[:200]}")
     
-    # Hanya proses pesan yang mengandung "Bind Result" (bukan pesan loading)
     if "Bind Result" not in text:
         logger.info("⏳ Pesan loading bind, diabaikan")
         return
     
-    # Ekstrak UID dari teks bind
     uid_match = re.search(r'🆔.*?(\d+)', text)
     
-    # Jika tidak ada UID, cek apakah ini pesan error
     if not uid_match:
         if "status\": -1" in text or "Failed to retrieve" in text:
             logger.warning("⚠️ Bind response error (API error), tidak ada data bind")
@@ -1135,7 +1141,6 @@ async def bind_response_handler(event):
     uid = uid_match.group(1)
     logger.info(f"🔍 Ekstrak UID: {uid}")
     
-    # Cari pending bind yang memiliki UID yang sama
     target_chat = None
     for chat_id, info in pending_bind.items():
         if info.get('uid') == uid:
@@ -1146,11 +1151,9 @@ async def bind_response_handler(event):
         logger.warning(f"⚠️ Tidak ada pending bind untuk UID {uid}")
         return
     
-    # Ekstrak Creation
     creation_match = re.search(r'🕰.*?Creation.*?(\d{4})', text)
     creation = creation_match.group(1) if creation_match else None
     
-    # Ekstrak Last Login dan bersihkan
     last_login_match = re.search(r'🕒.*?Last Login.*?:\s*(.+?)(?:\n|$)', text)
     last_login = last_login_match.group(1).strip() if last_login_match else None
     
@@ -1159,17 +1162,14 @@ async def bind_response_handler(event):
         last_login = re.sub(r'\s*(PHT|WIB|WITA|WIT|UTC|GMT)[^\s]*', '', last_login, flags=re.IGNORECASE)
         last_login = re.sub(r'\s+', ' ', last_login).strip()
     
-    # Simpan data bind
     bind_data[target_chat] = {
         'creation': creation,
         'last_login': last_login
     }
     
-    # Beri sinyal bahwa bind sudah diterima
     if target_chat in pending_bind_wait:
         pending_bind_wait[target_chat].set()
     
-    # Hapus dari pending bind
     pending_bind.pop(target_chat, None)
     logger.info(f"✅ Bind data diterima untuk user {target_chat}: creation={creation}, last_login={last_login}")
 
@@ -1271,14 +1271,12 @@ async def process_queue():
 async def main():
     logger.info("🚀 Memulai userbot...")
 
-    # Load data auto redeem
     auto_redeem.load()
     logger.info(f"📊 Auto Redeem: {'✅ ACTIVE' if AUTO_REDEEM_ENABLED else '❌ DISABLED'}")
     logger.info(f"📊 Target Channel: @{AUTO_REDEEM_CHANNEL}")
     logger.info(f"📊 Redeem Delay: {REDEEM_DELAY} seconds")
     logger.info(f"📊 Forward Telegram: {'✅ ACTIVE' if FORWARD_ENABLED else '❌ DISABLED'} to @{FORWARD_TARGET}")
 
-    # Bersihkan queue lama di Redis
     try:
         queue_len = r.llen('pending_requests')
         if queue_len > 0:
@@ -1298,15 +1296,11 @@ async def main():
         me = await client.get_me()
         logger.info(f"✅ Login sebagai: {me.first_name}")
 
-        # Daftarkan event handler
         client.add_event_handler(message_handler)
         client.add_event_handler(auto_redeem_handler)
         client.add_event_handler(bind_response_handler)
 
-        # Jalankan timeout checker
         asyncio.create_task(timeout_checker())
-
-        # Jalankan pemrosesan antrian
         await process_queue()
     except Exception as e:
         logger.error(f"❌ Fatal error: {e}")
