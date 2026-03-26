@@ -1072,11 +1072,22 @@ async def bind_response_handler(event):
         logger.info("⏳ Pesan loading bind, diabaikan")
         return
     
-    # Ekstrak UID dari teks bind
+    # Ekstrak UID dari teks bind (coba cari di berbagai format)
     uid_match = re.search(r'🆔.*?(\d+)', text)
+    
+    # Jika tidak ada UID, cek apakah ini pesan error
     if not uid_match:
-        logger.warning("❌ Tidak dapat menemukan UID dalam pesan bind")
-        return
+        # Cek apakah ini pesan error API
+        if "status\": -1" in text or "Failed to retrieve" in text:
+            logger.warning("⚠️ Bind response error (API error), tidak ada data bind")
+            
+            # Coba ekstrak UID dari pesan sebelumnya? Tidak bisa.
+            # Alternatif: kita tidak bisa tahu user mana yang error
+            # Jadi lewati saja, biar timeout yang handle
+            return
+        else:
+            logger.warning("❌ Tidak dapat menemukan UID dalam pesan bind")
+            return
     
     uid = uid_match.group(1)
     logger.info(f"🔍 Ekstrak UID: {uid}")
@@ -1108,13 +1119,13 @@ async def bind_response_handler(event):
         # Hapus multiple spaces
         last_login = re.sub(r'\s+', ' ', last_login).strip()
     
-    # Simpan data bind
+    # Simpan data bind (bisa None jika tidak ada)
     bind_data[target_chat] = {
         'creation': creation,
         'last_login': last_login
     }
     
-    # Beri sinyal bahwa bind sudah diterima
+    # Beri sinyal bahwa bind sudah diterima (meskipun datanya None)
     if target_chat in pending_bind_wait:
         pending_bind_wait[target_chat].set()
     
@@ -1154,6 +1165,27 @@ async def process_queue():
                         await asyncio.sleep(5)
                         continue
 
+                    # ========== VALIDASI GoPay SEBELUM PROSES ==========
+                    uid = req_data['args'][0]
+                    sid = req_data['args'][1]
+
+                    logger.info(f"🔍 Validasi GoPay untuk {uid}:{sid}")
+                    gopay_check = validate_mlbb_gopay_sync(uid, sid)
+
+                    if not gopay_check['status']:
+                        # GoPay gagal, kirim pesan error langsung ke user
+                        error_msg = "ID dan Server tidak valid, silakan coba lagi."
+                        await send_status_to_user(user_id, error_msg, reply_to_message_id)
+                        
+                        # Hapus request dari antrian
+                        r.lpop('pending_requests')
+                        r.delete(req_id)
+                        logger.warning(f"🗑️ Request {req_id} dibatalkan karena ID/Server tidak valid")
+                        continue
+
+                    logger.info(f"✅ GoPay valid: {gopay_check['username']} - {gopay_check['region']}")
+                    # ====================================================
+
                     # Kirim status awal ke user
                     msg_id = await send_status_to_user(user_id, "Proses request...", reply_to_message_id)
                     if not msg_id:
@@ -1177,16 +1209,14 @@ async def process_queue():
                     logger.info(f"📤 Mengirim ke Bot A: {cmd}")
 
                     # Kirim perintah /bind ke Bot Bind
-                    uid = req_data['args'][0]
-                    server = req_data['args'][1]
-                    bind_cmd = f"/bind {uid} {server}"
+                    bind_cmd = f"/bind {uid} {sid}"
                     await client.send_message(BOT_BIND_USERNAME, bind_cmd)
                     logger.info(f"📤 Mengirim ke {BOT_BIND_USERNAME}: {bind_cmd}")
 
                     # Catat pending bind
                     pending_bind[user_id] = {
                         'uid': uid,
-                        'server': server,
+                        'server': sid,
                         'start_time': now,
                         'status_msg_id': msg_id
                     }
