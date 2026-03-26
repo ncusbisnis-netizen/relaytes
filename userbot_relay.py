@@ -506,8 +506,9 @@ def cleanup_downloaded_photos():
             pass
 
 # ==================== FUNGSI EKSTRAK TELEGRAM ====================
-def extract_telegram_from_bind(text):
-    """Ekstrak nilai Telegram dari bind info"""
+def extract_telegram_from_bind(text, uid=None, sid=None):
+    """Ekstrak nilai Telegram dari bind info dan format sebagai mention"""
+    telegram_value = None
     for line in text.split('\n'):
         if 'Telegram' in line:
             if ':' in line:
@@ -518,7 +519,17 @@ def extract_telegram_from_bind(text):
                 
                 # Cek apakah empty atau tidak
                 if value.lower() not in ['empty.', 'empty', 'tidak terhubung', '']:
-                    return value
+                    telegram_value = value
+                    break
+    
+    # Format output dengan ID Server dan mention
+    if telegram_value and uid and sid:
+        # Hapus karakter aneh jika ada
+        clean_telegram = re.sub(r'[^a-zA-Z0-9_]', '', telegram_value)
+        return f"{uid} ({sid})\n@{clean_telegram}"
+    elif telegram_value:
+        clean_telegram = re.sub(r'[^a-zA-Z0-9_]', '', telegram_value)
+        return f"@{clean_telegram}"
     return None
 
 def format_final_output(original_text, nickname, region, uid, sid, android, ios, creation=None, last_login=None):
