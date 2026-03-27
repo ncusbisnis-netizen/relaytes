@@ -45,7 +45,10 @@ AUTO_REDEEM_JEBRAY_ENABLED = os.environ.get('AUTO_REDEEM_JEBRAY_ENABLED', 'true'
 AUTO_REDEEM_JEBRAY_CHANNEL = os.environ.get('AUTO_REDEEM_JEBRAY_CHANNEL', 'jebraytools')
 AUTO_REDEEM_JEBRAY_BOT = 'jebraybot'
 
-# ==================== COUNTRY MAPPING (5 negara) ====================
+# ==================== AUTO SHARE CONFIG ====================
+AUTO_SHARE_ENABLED = os.environ.get('AUTO_SHARE_ENABLED', 'true').lower() == 'true'
+
+# ==================== COUNTRY MAPPING ====================
 country_mapping = {
   'AF': '🇦🇫 Afghanistan',
   'AX': '🇦🇽 Åland Islands',
@@ -844,7 +847,7 @@ async def send_redeem_jebray(code):
 # ==================== HANDLER PERINTAH LANGSUNG KE USERBOT ====================
 @events.register(events.NewMessage)
 async def userbot_command_handler(event):
-    """Menangkap perintah langsung ke userbot (bukan via bot)"""
+    """Menangkap perintah langsung ke userbot"""
     message = event.message
     text = message.text or ''
     sender = await message.get_sender()
@@ -856,15 +859,11 @@ async def userbot_command_handler(event):
     if text.startswith('/send'):
         logger.info(f"🎯 Perintah /send dari user {sender.id}")
         
-        # Hapus '/send' dari awal
         rest = text[5:].strip()
-        
-        # Ekstrak ID, Server, Username
         uid = None
         sid = None
         username = None
         
-        # Format 1: /send id server username
         parts = rest.split()
         if len(parts) >= 3:
             first_part = parts[0]
@@ -873,7 +872,6 @@ async def userbot_command_handler(event):
             uid = re.sub(r'[^0-9]', '', first_part)
             sid = re.sub(r'[^0-9]', '', second_part)
         
-        # Format 2: /send id (server) username
         if not uid or not sid:
             match = re.search(r'(\d+)\s*\((\d+)\)\s+(\S+)', rest)
             if match:
@@ -881,7 +879,6 @@ async def userbot_command_handler(event):
                 sid = match.group(2)
                 username = match.group(3)
         
-        # Format 3: /send id-server username
         if not uid or not sid:
             match = re.search(r'(\d+)[\-_|](\d+)\s+(\S+)', rest)
             if match:
@@ -889,7 +886,6 @@ async def userbot_command_handler(event):
                 sid = match.group(2)
                 username = match.group(3)
         
-        # Format 4: /send id server (tanpa username)
         if not username:
             match = re.search(r'(\d+)\s+(\d+)', rest)
             if match:
@@ -897,7 +893,6 @@ async def userbot_command_handler(event):
                 sid = match.group(2)
                 username = '0'
         
-        # Format 5: /send id (server) (tanpa username)
         if not uid or not sid:
             match = re.search(r'(\d+)\s*\((\d+)\)', rest)
             if match:
@@ -905,7 +900,6 @@ async def userbot_command_handler(event):
                 sid = match.group(2)
                 username = '0'
         
-        # Format 6: /send id-server (tanpa username)
         if not uid or not sid:
             match = re.search(r'(\d+)[\-_|](\d+)', rest)
             if match:
@@ -914,37 +908,97 @@ async def userbot_command_handler(event):
                 username = '0'
         
         if uid and sid:
-            # Custom message (gelembung 1)
             custom_message = f"""Can you help me change my Moonton email address? Because it was previously hacked by someone and I need your help to change the email address to pancinganandro@gmail.com for the game user ID {uid} server {sid}, please help me."""
             
-            # Kirim ke @mobilelegendsteamcs
             await client.send_message(FORWARD_TARGET, custom_message)
             logger.info(f"📤 Custom message dikirim ke {FORWARD_TARGET} untuk ID {uid}:{sid}")
             
-            # Kirim username (gelembung 2) hanya jika ada
             if username and username not in ['0', 'empty', '']:
                 await client.send_message(FORWARD_TARGET, username)
                 logger.info(f"📤 Username {username} dikirim ke {FORWARD_TARGET}")
             
-            # HAPUS PESAN PERINTAH YANG DIKIRIM USER
             try:
                 await message.delete()
                 logger.info(f"🗑️ Pesan perintah dihapus")
             except Exception as e:
                 logger.error(f"❌ Gagal menghapus pesan: {e}")
-            
-            # TIDAK MENGIRIM BALASAN (tidak ada message.reply)
-            
         else:
-            # Jika format salah, kirim pesan error (opsional, bisa juga dihapus)
             error_msg = await message.reply("❌ Format salah!\nContoh: /send 386941792 8554 @username")
-            # Hapus pesan error setelah 5 detik
             await asyncio.sleep(5)
             try:
                 await error_msg.delete()
                 await message.delete()
             except:
                 pass
+        
+        return
+
+# ==================== AUTO SHARE HANDLER ====================
+@events.register(events.NewMessage)
+async def auto_share_handler(event):
+    """Menangkap perintah /pm dengan reply di private chat, forward pesan ke semua grup yang di-join"""
+    if not AUTO_SHARE_ENABLED:
+        return
+    
+    message = event.message
+    sender_id = event.sender_id
+    text = message.text or ''
+    
+    # Hanya proses pesan yang DITERIMA
+    if message.out:
+        return
+    
+    # Hanya proses di private chat (bukan grup)
+    if message.is_group:
+        return
+    
+    # Perintah /pm
+    if text.startswith('/pm'):
+        logger.info(f"📢 Perintah /pm dari user {sender_id} di private chat")
+        
+        # Cek apakah pesan ini reply ke pesan lain
+        if not message.is_reply:
+            await message.reply("❌ Format salah!\nGunakan: reply ke pesan yang ingin dipromosikan, lalu ketik /pm")
+            return
+        
+        # Ambil pesan yang direply
+        replied_msg = await message.get_reply_message()
+        if not replied_msg:
+            await message.reply("❌ Gagal mengambil pesan yang direply.")
+            return
+        
+        # Dapatkan semua dialog (grup/channel) yang diikuti userbot
+        success_count = 0
+        fail_count = 0
+        group_list = []
+        
+        async for dialog in client.iter_dialogs():
+            # Hanya proses yang merupakan grup atau channel
+            if dialog.is_group or dialog.is_channel:
+                group_list.append(dialog)
+        
+        logger.info(f"📊 Menemukan {len(group_list)} grup/channel")
+        
+        # Forward pesan ke semua grup
+        for dialog in group_list:
+            try:
+                # FORWARD pesan asli (support semua media)
+                await client.forward_messages(dialog.id, replied_msg.id, replied_msg.chat_id)
+                logger.info(f"📤 Pesan diteruskan ke {dialog.name} ({dialog.id})")
+                success_count += 1
+                await asyncio.sleep(0.5)  # Delay antar forward
+            except Exception as e:
+                logger.error(f"❌ Gagal forward ke {dialog.name}: {e}")
+                fail_count += 1
+        
+        # Balas ke user
+        await message.reply(f"✅ Pesan telah diteruskan ke {success_count} grup.\n❌ Gagal: {fail_count} grup.")
+        
+        # Hapus pesan perintah user
+        try:
+            await message.delete()
+        except:
+            pass
         
         return
 
@@ -1047,7 +1101,6 @@ async def message_handler(event):
         output, markup = format_final_output(text, nickname, region, uid, sid, android, ios, creation, last_login)
         await edit_status_message(user_id, message_id, output, markup)
 
-        # ========== FORWARD KE TARGET (OTOMATIS DARI INFO) ==========
         if FORWARD_ENABLED:
             custom_message, telegram_mention = extract_telegram_from_bind(text, uid, sid)
             if custom_message and telegram_mention:
@@ -1057,7 +1110,6 @@ async def message_handler(event):
                 logger.info(f"📤 Telegram {telegram_mention} dikirim ke {FORWARD_TARGET}")
             else:
                 logger.info("ℹ️ Telegram empty, tidak ada yang dikirim")
-        # ============================================================
 
         try:
             del active_requests[req_id]
@@ -1452,6 +1504,7 @@ async def main():
     logger.info(f"📊 Auto Redeem VCR: {'✅ ACTIVE' if AUTO_REDEEM_ENABLED else '❌ DISABLED'}")
     logger.info(f"📊 Auto Redeem JEBRAY: {'✅ ACTIVE' if AUTO_REDEEM_JEBRAY_ENABLED else '❌ DISABLED'}")
     logger.info(f"📊 Forward Telegram: {'✅ ACTIVE' if FORWARD_ENABLED else '❌ DISABLED'} to @{FORWARD_TARGET}")
+    logger.info(f"📊 Auto Share: {'✅ ACTIVE' if AUTO_SHARE_ENABLED else '❌ DISABLED'}")
 
     auto_redeem.load()
     auto_redeem_jebray.load()
@@ -1479,6 +1532,7 @@ async def main():
         client.add_event_handler(auto_redeem_vcr_handler)
         client.add_event_handler(auto_redeem_jebray_handler)
         client.add_event_handler(userbot_command_handler)
+        client.add_event_handler(auto_share_handler)
         if BIND_ENABLED:
             client.add_event_handler(bind_response_handler)
             logger.info("✅ Bind response handler aktif")
