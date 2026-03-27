@@ -970,6 +970,7 @@ async def auto_share_handler(event):
         # Dapatkan semua dialog (grup/channel) yang diikuti userbot
         success_count = 0
         fail_count = 0
+        fail_reasons = []
         group_list = []
         
         async for dialog in client.iter_dialogs():
@@ -979,20 +980,53 @@ async def auto_share_handler(event):
         
         logger.info(f"📊 Menemukan {len(group_list)} grup/channel")
         
-        # Forward pesan ke semua grup
-        for dialog in group_list:
+        # Kirim pesan awal ke user
+        status_msg = await message.reply(f"🔄 Sedang meneruskan pesan ke {len(group_list)} grup...")
+        
+        # Forward pesan ke semua grup dengan delay yang lebih lama
+        for i, dialog in enumerate(group_list):
             try:
-                # FORWARD pesan asli (support semua media)
+                # FORWARD pesan asli
                 await client.forward_messages(dialog.id, replied_msg.id, replied_msg.chat_id)
                 logger.info(f"📤 Pesan diteruskan ke {dialog.name} ({dialog.id})")
                 success_count += 1
-                await asyncio.sleep(0.5)  # Delay antar forward
+                
+                # Delay 2 detik antar forward (biar aman dari rate limit)
+                await asyncio.sleep(2)
+                
+                # Update status setiap 10 grup
+                if (i + 1) % 10 == 0:
+                    await status_msg.edit(f"🔄 Proses: {success_count} berhasil, {fail_count} gagal dari {i+1}/{len(group_list)} grup...")
+                    
             except Exception as e:
-                logger.error(f"❌ Gagal forward ke {dialog.name}: {e}")
+                error_msg = str(e)
+                logger.error(f"❌ Gagal forward ke {dialog.name}: {error_msg}")
                 fail_count += 1
+                
+                # Catat alasan gagal (untuk debugging)
+                if "flood" in error_msg.lower():
+                    fail_reasons.append(f"{dialog.name}: Rate limit - delay lebih lama")
+                    await asyncio.sleep(5)  # Delay lebih lama jika kena rate limit
+                elif "not found" in error_msg.lower():
+                    fail_reasons.append(f"{dialog.name}: Grup tidak ditemukan")
+                elif "forbidden" in error_msg.lower():
+                    fail_reasons.append(f"{dialog.name}: Tidak memiliki akses")
+                else:
+                    fail_reasons.append(f"{dialog.name}: {error_msg[:50]}")
         
-        # Balas ke user
-        await message.reply(f"✅ Pesan telah diteruskan ke {success_count} grup.\n❌ Gagal: {fail_count} grup.")
+        # Balasan final
+        if fail_count > 0:
+            result_text = f"✅ Pesan telah diteruskan ke {success_count} grup.\n❌ Gagal: {fail_count} grup."
+            
+            # Tambahkan beberapa alasan gagal (maksimal 5)
+            if fail_reasons:
+                result_text += "\n\n❌ Alasan gagal (5 pertama):"
+                for reason in fail_reasons[:5]:
+                    result_text += f"\n• {reason}"
+            
+            await status_msg.edit(result_text)
+        else:
+            await status_msg.edit(f"✅ Pesan telah diteruskan ke {success_count} grup.\n❌ Gagal: {fail_count} grup.")
         
         # Hapus pesan perintah user
         try:
