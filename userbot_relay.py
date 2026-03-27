@@ -1042,8 +1042,8 @@ async def join_handler(event):
             target = target[1:]
         
         try:
-            # Coba join
-            await client.join_channel(target)
+            # Coba join menggunakan join_chat (bukan join_channel)
+            await client.join_chat(target)
             logger.info(f"✅ Berhasil join ke {target}")
             await message.reply(f"✅ Berhasil join ke @{target}")
         except Exception as e:
@@ -1054,6 +1054,8 @@ async def join_handler(event):
                 await message.reply(f"❌ Tidak diizinkan join ke @{target} (mungkin private atau restricted)")
             elif "The channel is private" in error_msg:
                 await message.reply(f"❌ @{target} adalah channel private, tidak bisa join otomatis")
+            elif "Chat not found" in error_msg:
+                await message.reply(f"❌ Grup/channel @{target} tidak ditemukan")
             else:
                 await message.reply(f"❌ Gagal join ke @{target}\nError: {error_msg[:100]}")
                 logger.error(f"❌ Gagal join ke {target}: {e}")
