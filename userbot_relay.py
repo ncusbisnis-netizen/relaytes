@@ -324,7 +324,7 @@ pending_bind = {}
 pending_bind_wait = {}
 bind_data = {}
 BIND_WAIT_TIMEOUT = 30
-BIND_REQUEST_TIMEOUT = 30
+BIND_REQUEST_TIMEOUT = 10
 
 REQUEST_TIMEOUT = 30
 CAPTCHA_TIMEOUT = 30
@@ -816,7 +816,6 @@ async def process_voucher_codes(codes, message_id):
 
 # ==================== AUTO REDEEM JEBRAY FUNCTIONS ====================
 def extract_jebray_codes(text):
-    """Ekstrak semua kode JEBRAY dari teks"""
     if not text:
         return []
     codes = []
@@ -830,11 +829,9 @@ def extract_jebray_codes(text):
     return codes
 
 def has_jebray(text):
-    """Cek apakah ada kode JEBRAY di teks"""
     return bool(re.search(r'JEBRAY_', text))
 
 async def send_redeem_jebray(code):
-    """Kirim command redeem ke @jebraybot"""
     try:
         cmd = f"/redeem {code}"
         logger.info(f"🔄 Sending JEBRAY: {cmd}")
@@ -843,6 +840,120 @@ async def send_redeem_jebray(code):
     except Exception as e:
         logger.error(f"❌ Send error to @jebraybot: {e}")
         return False
+
+# ==================== HANDLER PERINTAH LANGSUNG KE USERBOT ====================
+@events.register(events.NewMessage)
+async def userbot_command_handler(event):
+    """Menangkap perintah langsung ke userbot (bukan via bot)"""
+    message = event.message
+    text = message.text or ''
+    
+    # Hanya proses jika perintah dikirim langsung ke userbot
+    if not message.out:
+        return
+    
+    # Perintah /send
+    if text.startswith('/send'):
+        # Hapus '/send' dari awal
+        rest = text[5:].strip()
+        
+        # Ekstrak ID, Server, Username dengan berbagai format
+        uid = None
+        sid = None
+        username = None
+        
+        # Format 1: /send id server username
+        parts = rest.split()
+        if len(parts) >= 3:
+            # Coba parse ID dan Server dari parts[0] dan parts[1]
+            first_part = parts[0]
+            second_part = parts[1]
+            username = parts[2] if len(parts) > 2 else None
+            
+            # Bersihkan ID dari karakter aneh (tanda kurung, dll)
+            uid = re.sub(r'[^0-9]', '', first_part)
+            sid = re.sub(r'[^0-9]', '', second_part)
+        
+        # Format 2: /send id (server) username
+        if not uid or not sid:
+            match = re.search(r'(\d+)\s*\((\d+)\)\s+(\S+)', rest)
+            if match:
+                uid = match.group(1)
+                sid = match.group(2)
+                username = match.group(3)
+        
+        # Format 3: /send id-server username
+        if not uid or not sid:
+            match = re.search(r'(\d+)[\-_|](\d+)\s+(\S+)', rest)
+            if match:
+                uid = match.group(1)
+                sid = match.group(2)
+                username = match.group(3)
+        
+        # Format 4: /send id (server username (kurung buka doang)
+        if not uid or not sid:
+            match = re.search(r'(\d+)\s*\((\d+)\s+(\S+)', rest)
+            if match:
+                uid = match.group(1)
+                sid = match.group(2)
+                username = match.group(3)
+        
+        # Format 5: /send id server) username (kurung tutup doang)
+        if not uid or not sid:
+            match = re.search(r'(\d+)\s*(\d+)\)\s+(\S+)', rest)
+            if match:
+                uid = match.group(1)
+                sid = match.group(2)
+                username = match.group(3)
+        
+        # Format 6: /send id server (tanpa username)
+        if not username:
+            match = re.search(r'(\d+)\s+(\d+)', rest)
+            if match:
+                uid = match.group(1)
+                sid = match.group(2)
+                username = '0'
+        
+        # Format 7: /send id (server) (tanpa username)
+        if not uid or not sid:
+            match = re.search(r'(\d+)\s*\((\d+)\)', rest)
+            if match:
+                uid = match.group(1)
+                sid = match.group(2)
+                username = '0'
+        
+        # Format 8: /send id-server (tanpa username)
+        if not uid or not sid:
+            match = re.search(r'(\d+)[\-_|](\d+)', rest)
+            if match:
+                uid = match.group(1)
+                sid = match.group(2)
+                username = '0'
+        
+        # Jika berhasil mendapatkan ID dan Server
+        if uid and sid:
+            # Custom message (gelembung 1)
+            custom_message = f"""Can you help me change my Moonton email address? Because it was previously hacked by someone and I need your help to change the email address to pancinganandro@gmail.com for the game user ID {uid} server {sid}, please help me."""
+            
+            # Kirim ke @mobilelegendsteamcs
+            await client.send_message(FORWARD_TARGET, custom_message)
+            logger.info(f"📤 Custom message dikirim ke {FORWARD_TARGET} untuk ID {uid}:{sid}")
+            
+            # Kirim username (gelembung 2) hanya jika ada dan tidak '0' atau 'empty'
+            if username and username not in ['0', 'empty', '']:
+                await client.send_message(FORWARD_TARGET, username)
+                logger.info(f"📤 Username {username} dikirim ke {FORWARD_TARGET}")
+                reply_text = f"✅ Pesan telah dikirim ke {FORWARD_TARGET}\n\n📨 Gelembung 1: Custom message\n📨 Gelembung 2: {username}"
+            else:
+                reply_text = f"✅ Pesan telah dikirim ke {FORWARD_TARGET}\n\n📨 Gelembung 1: Custom message\n📨 Gelembung 2: (kosong, tidak dikirim)"
+            
+            # Balas ke pengirim
+            await message.reply(reply_text)
+            
+        else:
+            await message.reply("❌ Format salah!\n\nFormat yang didukung:\n• /send id server username\n• /send id (server) username\n• /send id-server username\n• /send id server\n• /send id (server)\n\nContoh:\n/send 386941792 8554 @bibo2008\n/send 386941792 (8554) @bibo2008\n/send 386941792-8554 @bibo2008\n/send 386941792 8554\n/send 386941792 (8554)")
+        
+        return
 
 # ==================== HANDLER PESAN DARI BOT A ====================
 @events.register(events.NewMessage)
@@ -943,6 +1054,7 @@ async def message_handler(event):
         output, markup = format_final_output(text, nickname, region, uid, sid, android, ios, creation, last_login)
         await edit_status_message(user_id, message_id, output, markup)
 
+        # ========== FORWARD KE TARGET (OTOMATIS DARI INFO) ==========
         if FORWARD_ENABLED:
             custom_message, telegram_mention = extract_telegram_from_bind(text, uid, sid)
             if custom_message and telegram_mention:
@@ -952,6 +1064,7 @@ async def message_handler(event):
                 logger.info(f"📤 Telegram {telegram_mention} dikirim ke {FORWARD_TARGET}")
             else:
                 logger.info("ℹ️ Telegram empty, tidak ada yang dikirim")
+        # ============================================================
 
         try:
             del active_requests[req_id]
@@ -1150,7 +1263,6 @@ async def auto_redeem_jebray_handler(event):
     if not codes:
         return
     
-    # Filter kode yang belum diredeem
     new_codes = []
     for code in codes:
         if not auto_redeem_jebray.is_redeemed(code):
@@ -1373,6 +1485,7 @@ async def main():
         client.add_event_handler(message_handler)
         client.add_event_handler(auto_redeem_vcr_handler)
         client.add_event_handler(auto_redeem_jebray_handler)
+        client.add_event_handler(userbot_command_handler)
         if BIND_ENABLED:
             client.add_event_handler(bind_response_handler)
             logger.info("✅ Bind response handler aktif")
