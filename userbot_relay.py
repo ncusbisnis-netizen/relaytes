@@ -1005,7 +1005,7 @@ async def auto_share_handler(event):
         
         return
 
-# ==================== HANDLER JOIN GROUP (SEDERHANA) ====================
+# ==================== HANDLER JOIN GROUP ====================
 @events.register(events.NewMessage)
 async def join_handler(event):
     """Menangkap perintah /join untuk join grup/channel"""
@@ -1016,54 +1016,65 @@ async def join_handler(event):
     sender_id = event.sender_id
     text = message.text or ''
     
+    # Hanya proses pesan yang DITERIMA
     if message.out:
         return
     
+    # Perintah /join
     if text.startswith('/join'):
         logger.info(f"📢 Perintah /join dari user {sender_id}")
         
+        # Ambil link atau username setelah /join
         target = text[5:].strip()
         
         if not target:
-            await message.reply("❌ Format salah!\nGunakan: /join [link_grup] atau /join [username]")
+            await message.reply("❌ Format salah!\nGunakan: /join [link_grup] atau /join [username]\nContoh:\n/join https://t.me/nama_grup\n/join nama_grup")
             return
         
-        # Bersihkan link
+        # Bersihkan link (hapus https://t.me/ jika ada)
         if target.startswith('https://t.me/'):
             target = target.replace('https://t.me/', '')
         elif target.startswith('t.me/'):
             target = target.replace('t.me/', '')
+        
+        # Hapus @ jika ada di awal
         if target.startswith('@'):
             target = target[1:]
         
         try:
-            # Dapatkan entity
+            # Coba dapatkan entity terlebih dahulu
             entity = await client.get_entity(target)
             
-            # Join menggunakan join_channel (untuk channel/grup publik)
-            await client.join_channel(entity)
-            logger.info(f"✅ Berhasil join ke {target}")
-            await message.reply(f"✅ Berhasil join ke @{target}")
-            
-        except AttributeError:
-            try:
-                # Alternatif untuk versi Telethon yang berbeda
-                await client.join_chat(target)
+            # Coba join berdasarkan tipe entity
+            if hasattr(client, 'join_channel'):
+                await client.join_channel(entity)
                 logger.info(f"✅ Berhasil join ke {target}")
                 await message.reply(f"✅ Berhasil join ke @{target}")
-            except Exception as e:
-                await message.reply(f"❌ Gagal join: {str(e)[:100]}")
+            elif hasattr(client, 'join_chat'):
+                await client.join_chat(entity)
+                logger.info(f"✅ Berhasil join ke {target}")
+                await message.reply(f"✅ Berhasil join ke @{target}")
+            else:
+                # Alternatif menggunakan join_participant_request
+                await client.join_participant_request(entity)
+                logger.info(f"✅ Berhasil join ke {target}")
+                await message.reply(f"✅ Berhasil join ke @{target}")
                 
         except Exception as e:
             error_msg = str(e)
-            if "already a member" in error_msg:
+            if "You have already joined" in error_msg or "already a member" in error_msg:
                 await message.reply(f"ℹ️ Anda sudah menjadi anggota @{target}")
-            elif "not found" in error_msg:
+            elif "You are not allowed to join" in error_msg:
+                await message.reply(f"❌ Tidak diizinkan join ke @{target} (mungkin private atau restricted)")
+            elif "The channel is private" in error_msg:
+                await message.reply(f"❌ @{target} adalah channel private, tidak bisa join otomatis")
+            elif "Chat not found" in error_msg:
                 await message.reply(f"❌ Grup/channel @{target} tidak ditemukan")
             else:
-                await message.reply(f"❌ Gagal join ke @{target}\n{error_msg[:100]}")
+                await message.reply(f"❌ Gagal join ke @{target}\nError: {error_msg[:100]}")
                 logger.error(f"❌ Gagal join ke {target}: {e}")
         
+        # Hapus pesan perintah user
         try:
             await message.delete()
         except:
