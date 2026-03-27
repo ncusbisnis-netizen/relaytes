@@ -324,7 +324,7 @@ pending_bind = {}
 pending_bind_wait = {}
 bind_data = {}
 BIND_WAIT_TIMEOUT = 30
-BIND_REQUEST_TIMEOUT = 10
+BIND_REQUEST_TIMEOUT = 30
 
 REQUEST_TIMEOUT = 30
 CAPTCHA_TIMEOUT = 30
