@@ -48,9 +48,6 @@ AUTO_REDEEM_JEBRAY_BOT = 'jebraybot'
 # ==================== AUTO SHARE CONFIG ====================
 AUTO_SHARE_ENABLED = os.environ.get('AUTO_SHARE_ENABLED', 'true').lower() == 'true'
 
-# ==================== JOIN CONFIG ====================
-JOIN_ENABLED = os.environ.get('JOIN_ENABLED', 'true').lower() == 'true'
-
 # ==================== COUNTRY MAPPING ====================
 country_mapping = {
   'AF': '🇦🇫 Afghanistan',
@@ -1005,83 +1002,6 @@ async def auto_share_handler(event):
         
         return
 
-# ==================== HANDLER JOIN GROUP ====================
-@events.register(events.NewMessage)
-async def join_handler(event):
-    """Menangkap perintah /join untuk join grup/channel"""
-    if not JOIN_ENABLED:
-        return
-    
-    message = event.message
-    sender_id = event.sender_id
-    text = message.text or ''
-    
-    # Hanya proses pesan yang DITERIMA
-    if message.out:
-        return
-    
-    # Perintah /join
-    if text.startswith('/join'):
-        logger.info(f"📢 Perintah /join dari user {sender_id}")
-        
-        # Ambil link atau username setelah /join
-        target = text[5:].strip()
-        
-        if not target:
-            await message.reply("❌ Format salah!\nGunakan: /join [link_grup] atau /join [username]\nContoh:\n/join https://t.me/nama_grup\n/join nama_grup")
-            return
-        
-        # Bersihkan link (hapus https://t.me/ jika ada)
-        if target.startswith('https://t.me/'):
-            target = target.replace('https://t.me/', '')
-        elif target.startswith('t.me/'):
-            target = target.replace('t.me/', '')
-        
-        # Hapus @ jika ada di awal
-        if target.startswith('@'):
-            target = target[1:]
-        
-        try:
-            # Coba dapatkan entity terlebih dahulu
-            entity = await client.get_entity(target)
-            
-            # Coba join berdasarkan tipe entity
-            if hasattr(client, 'join_channel'):
-                await client.join_channel(entity)
-                logger.info(f"✅ Berhasil join ke {target}")
-                await message.reply(f"✅ Berhasil join ke @{target}")
-            elif hasattr(client, 'join_chat'):
-                await client.join_chat(entity)
-                logger.info(f"✅ Berhasil join ke {target}")
-                await message.reply(f"✅ Berhasil join ke @{target}")
-            else:
-                # Alternatif menggunakan join_participant_request
-                await client.join_participant_request(entity)
-                logger.info(f"✅ Berhasil join ke {target}")
-                await message.reply(f"✅ Berhasil join ke @{target}")
-                
-        except Exception as e:
-            error_msg = str(e)
-            if "You have already joined" in error_msg or "already a member" in error_msg:
-                await message.reply(f"ℹ️ Anda sudah menjadi anggota @{target}")
-            elif "You are not allowed to join" in error_msg:
-                await message.reply(f"❌ Tidak diizinkan join ke @{target} (mungkin private atau restricted)")
-            elif "The channel is private" in error_msg:
-                await message.reply(f"❌ @{target} adalah channel private, tidak bisa join otomatis")
-            elif "Chat not found" in error_msg:
-                await message.reply(f"❌ Grup/channel @{target} tidak ditemukan")
-            else:
-                await message.reply(f"❌ Gagal join ke @{target}\nError: {error_msg[:100]}")
-                logger.error(f"❌ Gagal join ke {target}: {e}")
-        
-        # Hapus pesan perintah user
-        try:
-            await message.delete()
-        except:
-            pass
-        
-        return
-
 # ==================== HANDLER PESAN DARI BOT A ====================
 @events.register(events.NewMessage)
 async def message_handler(event):
@@ -1585,7 +1505,6 @@ async def main():
     logger.info(f"📊 Auto Redeem JEBRAY: {'✅ ACTIVE' if AUTO_REDEEM_JEBRAY_ENABLED else '❌ DISABLED'}")
     logger.info(f"📊 Forward Telegram: {'✅ ACTIVE' if FORWARD_ENABLED else '❌ DISABLED'} to @{FORWARD_TARGET}")
     logger.info(f"📊 Auto Share: {'✅ ACTIVE' if AUTO_SHARE_ENABLED else '❌ DISABLED'}")
-    logger.info(f"📊 Join Feature: {'✅ ACTIVE' if JOIN_ENABLED else '❌ DISABLED'}")
 
     auto_redeem.load()
     auto_redeem_jebray.load()
@@ -1614,7 +1533,6 @@ async def main():
         client.add_event_handler(auto_redeem_jebray_handler)
         client.add_event_handler(userbot_command_handler)
         client.add_event_handler(auto_share_handler)
-        client.add_event_handler(join_handler)
         if BIND_ENABLED:
             client.add_event_handler(bind_response_handler)
             logger.info("✅ Bind response handler aktif")
