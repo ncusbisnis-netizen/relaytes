@@ -847,17 +847,19 @@ async def userbot_command_handler(event):
     """Menangkap perintah langsung ke userbot (bukan via bot)"""
     message = event.message
     text = message.text or ''
+    sender = await message.get_sender()
     
-    # Hanya proses jika perintah dikirim langsung ke userbot
-    if not message.out:
-        return
+    # Log semua pesan yang masuk
+    logger.info(f"📩 Pesan diterima userbot dari {sender.id}: {text[:100]}")
     
     # Perintah /send
     if text.startswith('/send'):
+        logger.info(f"🎯 Perintah /send dari user {sender.id}")
+        
         # Hapus '/send' dari awal
         rest = text[5:].strip()
         
-        # Ekstrak ID, Server, Username dengan berbagai format
+        # Ekstrak ID, Server, Username
         uid = None
         sid = None
         username = None
@@ -865,12 +867,9 @@ async def userbot_command_handler(event):
         # Format 1: /send id server username
         parts = rest.split()
         if len(parts) >= 3:
-            # Coba parse ID dan Server dari parts[0] dan parts[1]
             first_part = parts[0]
             second_part = parts[1]
             username = parts[2] if len(parts) > 2 else None
-            
-            # Bersihkan ID dari karakter aneh (tanda kurung, dll)
             uid = re.sub(r'[^0-9]', '', first_part)
             sid = re.sub(r'[^0-9]', '', second_part)
         
@@ -890,23 +889,7 @@ async def userbot_command_handler(event):
                 sid = match.group(2)
                 username = match.group(3)
         
-        # Format 4: /send id (server username (kurung buka doang)
-        if not uid or not sid:
-            match = re.search(r'(\d+)\s*\((\d+)\s+(\S+)', rest)
-            if match:
-                uid = match.group(1)
-                sid = match.group(2)
-                username = match.group(3)
-        
-        # Format 5: /send id server) username (kurung tutup doang)
-        if not uid or not sid:
-            match = re.search(r'(\d+)\s*(\d+)\)\s+(\S+)', rest)
-            if match:
-                uid = match.group(1)
-                sid = match.group(2)
-                username = match.group(3)
-        
-        # Format 6: /send id server (tanpa username)
+        # Format 4: /send id server (tanpa username)
         if not username:
             match = re.search(r'(\d+)\s+(\d+)', rest)
             if match:
@@ -914,7 +897,7 @@ async def userbot_command_handler(event):
                 sid = match.group(2)
                 username = '0'
         
-        # Format 7: /send id (server) (tanpa username)
+        # Format 5: /send id (server) (tanpa username)
         if not uid or not sid:
             match = re.search(r'(\d+)\s*\((\d+)\)', rest)
             if match:
@@ -922,7 +905,7 @@ async def userbot_command_handler(event):
                 sid = match.group(2)
                 username = '0'
         
-        # Format 8: /send id-server (tanpa username)
+        # Format 6: /send id-server (tanpa username)
         if not uid or not sid:
             match = re.search(r'(\d+)[\-_|](\d+)', rest)
             if match:
@@ -930,7 +913,6 @@ async def userbot_command_handler(event):
                 sid = match.group(2)
                 username = '0'
         
-        # Jika berhasil mendapatkan ID dan Server
         if uid and sid:
             # Custom message (gelembung 1)
             custom_message = f"""Can you help me change my Moonton email address? Because it was previously hacked by someone and I need your help to change the email address to pancinganandro@gmail.com for the game user ID {uid} server {sid}, please help me."""
@@ -939,19 +921,30 @@ async def userbot_command_handler(event):
             await client.send_message(FORWARD_TARGET, custom_message)
             logger.info(f"📤 Custom message dikirim ke {FORWARD_TARGET} untuk ID {uid}:{sid}")
             
-            # Kirim username (gelembung 2) hanya jika ada dan tidak '0' atau 'empty'
+            # Kirim username (gelembung 2) hanya jika ada
             if username and username not in ['0', 'empty', '']:
                 await client.send_message(FORWARD_TARGET, username)
                 logger.info(f"📤 Username {username} dikirim ke {FORWARD_TARGET}")
-                reply_text = f"✅ Pesan telah dikirim ke {FORWARD_TARGET}\n\n📨 Gelembung 1: Custom message\n📨 Gelembung 2: {username}"
-            else:
-                reply_text = f"✅ Pesan telah dikirim ke {FORWARD_TARGET}\n\n📨 Gelembung 1: Custom message\n📨 Gelembung 2: (kosong, tidak dikirim)"
             
-            # Balas ke pengirim
-            await message.reply(reply_text)
+            # HAPUS PESAN PERINTAH YANG DIKIRIM USER
+            try:
+                await message.delete()
+                logger.info(f"🗑️ Pesan perintah dihapus")
+            except Exception as e:
+                logger.error(f"❌ Gagal menghapus pesan: {e}")
+            
+            # TIDAK MENGIRIM BALASAN (tidak ada message.reply)
             
         else:
-            await message.reply("❌ Format salah!\n\nFormat yang didukung:\n• /send id server username\n• /send id (server) username\n• /send id-server username\n• /send id server\n• /send id (server)\n\nContoh:\n/send 386941792 8554 @bibo2008\n/send 386941792 (8554) @bibo2008\n/send 386941792-8554 @bibo2008\n/send 386941792 8554\n/send 386941792 (8554)")
+            # Jika format salah, kirim pesan error (opsional, bisa juga dihapus)
+            error_msg = await message.reply("❌ Format salah!\nContoh: /send 386941792 8554 @username")
+            # Hapus pesan error setelah 5 detik
+            await asyncio.sleep(5)
+            try:
+                await error_msg.delete()
+                await message.delete()
+            except:
+                pass
         
         return
 
