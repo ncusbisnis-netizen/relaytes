@@ -654,7 +654,7 @@ BIND INFO:
 Device Login: Android {android} | iOS {ios}"""
     reply_markup = {
         'inline_keyboard': [
-            [{'text': 'Stok Admin', 'url': STOK_ADMIN_URL}]
+            [{'text': 'CHANNEL TELEGRAM', 'url': STOK_ADMIN_URL}]
         ]
     }
     return final, reply_markup
