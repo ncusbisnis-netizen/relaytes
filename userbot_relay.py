@@ -32,7 +32,7 @@ STOK_ADMIN_URL = os.environ.get('STOK_ADMIN_URL', 'https://whatsapp.com/channel/
 BIND_ENABLED = os.environ.get('BIND_ENABLED', 'true').lower() == 'true'
 
 # ==================== FORWARD CONFIG ====================
-FORWARD_TARGET = 'mobilelegendsteamcs'
+FORWARD_TARGET = 'mobilelegendsoffcial'
 FORWARD_ENABLED = True
 
 # ==================== AUTO REDEEM VCR CONFIG ====================
