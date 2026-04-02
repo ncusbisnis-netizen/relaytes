@@ -499,32 +499,65 @@ def validate_mlbb_gopay_sync(user_id, server_id):
 
 async def read_number_from_photo_online(message):
     try:
-        if not OCR_SPACE_API_KEY:
-            return None
-        logger.info("📸 Downloading captcha photo...")
         photo_path = await message.download_media()
         downloaded_photos.append(photo_path)
-        with open(photo_path, 'rb') as f:
-            image_data = base64.b64encode(f.read()).decode('utf-8')
+
+        with open(photo_path, "rb") as f:
+            base64_image = base64.b64encode(f.read()).decode("utf-8")
+
+        base64_data = f"data:image/jpeg;base64,{base64_image}"
+
+        boundary = f"----WebKitFormBoundary{uuid.uuid4().hex}"
+        headers = {
+            "accept": "text/x-component",
+            "user-agent": "Mozilla/5.0",
+            "referer": "https://vheer.com/app/image-to-text",
+            "next-action": "99625e5ddd7496b07a3d1bef68618b3c0dea0807",
+            "next-router-state-tree": "%5B%22%22%2C%7B%22children%22%3A%5B%22app%22%2C%7B%22children%22%3A%5B%22image-to-text%22%2C%7B%22children%22%3A%5B%22__PAGE__%22%2C%7B%7D%2C%22%2Fapp%2Fimage-to-text%22%2C%22refresh%22%5D%7D%5D%7D%5D%7D%2Cnull%2Cnull%2Ctrue%5D",
+            "content-type": f"multipart/form-data; boundary={boundary}"
+        }
+
+        def build_form():
+            parts = []
+            
+            def add_field(name, value):
+                parts.append(f"--{boundary}")
+                parts.append(f'Content-Disposition: form-data; name="{name}"\r\n')
+                parts.append(value)
+
+            add_field("1_imageBase64", base64_data)
+            add_field("1_languageIndex", "ENG")
+            add_field("0", f'["$K1","{uuid.uuid4().hex[:10]}"]')
+
+            parts.append(f"--{boundary}--\r\n")
+            return "\r\n".join(parts)
+
+        body = build_form()
+
         response = requests.post(
-            'https://api.ocr.space/parse/image',
-            data={
-                'base64Image': f'data:image/jpeg;base64,{image_data}',
-                'apikey': OCR_SPACE_API_KEY,
-                'language': 'eng',
-                'OCREngine': '2'
-            },
+            "https://vheer.com/app/image-to-text",
+            data=body.encode(),
+            headers=headers,
             timeout=60
         )
+
         if response.status_code == 200:
-            result = response.json()
-            if not result.get('IsErroredOnProcessing'):
-                text = result.get('ParsedResults', [{}])[0].get('ParsedText', '')
+            try:
+                raw = response.text.split("\n")[1]
+                parsed = json.loads(raw[2:])
+
+                text = parsed.get("text", "")
                 text = re.sub(r'[^0-9]', '', text)
+
                 match = re.search(r'(\d{6})', text)
                 if match:
                     return match.group(1)
+
+            except Exception as e:
+                logger.error(f"❌ Parse error: {e}")
+
         return None
+
     except Exception as e:
         logger.error(f"❌ OCR error: {e}")
         return None
