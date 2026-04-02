@@ -499,25 +499,20 @@ def validate_mlbb_gopay_sync(user_id, server_id):
         return {'status': False, 'message': str(e)}
 
 async def read_number_from_photo_online(message):
-    """Gunakan OCR Space API dengan download yang lebih robust"""
+    """Gunakan OCR Space API dengan download yang benar"""
     if not OCR_SPACE_API_KEY:
         logger.warning("⚠️ OCR_SPACE_API_KEY tidak diset, tidak bisa OCR")
         return None
     
     photo_path = None
     try:
-        # Download dengan timeout yang lebih panjang
         logger.info("📸 Downloading captcha photo...")
-        try:
-            photo_path = await message.download_media(timeout=60)
-            if not photo_path:
-                logger.error("❌ Gagal download photo: path kosong")
-                return None
-        except asyncio.TimeoutError:
-            logger.error("❌ Timeout download photo")
-            return None
-        except Exception as e:
-            logger.error(f"❌ Download error: {e}")
+        
+        # Hapus parameter timeout - download_media() tidak support timeout
+        photo_path = await message.download_media()
+        
+        if not photo_path:
+            logger.error("❌ Gagal download photo: path kosong")
             return None
         
         logger.info(f"✅ Photo downloaded: {photo_path}")
@@ -570,7 +565,6 @@ async def read_number_from_photo_online(message):
             logger.info(f"📝 OCR Result: {parsed_text[:200]}")
             
             # Cari 6 digit angka
-            # Bersihkan dari spasi dan karakter aneh
             clean_text = re.sub(r'\s+', '', parsed_text)
             
             # Coba berbagai pattern
@@ -583,7 +577,6 @@ async def read_number_from_photo_online(message):
             for pattern in patterns:
                 match = re.search(pattern, parsed_text)
                 if match:
-                    # Gabungkan semua grup
                     code = ''.join(match.groups())
                     if len(code) >= 6:
                         captcha_code = code[:6]
@@ -600,6 +593,9 @@ async def read_number_from_photo_online(message):
             logger.warning(f"⚠️ Tidak menemukan 6 digit: {parsed_text[:100]}")
             return None
             
+    except asyncio.CancelledError:
+        logger.error("❌ OCR task dibatalkan")
+        return None
     except requests.exceptions.Timeout:
         logger.error("❌ OCR Space timeout")
         return None
