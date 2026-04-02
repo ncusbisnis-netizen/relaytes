@@ -9,6 +9,7 @@ import logging
 import json
 import requests
 import base64
+import uuid
 
 # Setup logging
 logging.basicConfig(
