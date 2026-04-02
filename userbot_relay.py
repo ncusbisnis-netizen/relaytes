@@ -531,7 +531,7 @@ async def read_number_from_photo_online(message):
             data = {
                 'apikey': OCR_SPACE_API_KEY,
                 'language': 'eng',
-                'OCREngine': 2,
+                'OCREngine': 1,
                 'scale': True,
                 'isTable': False,
                 'detectOrientation': True,
