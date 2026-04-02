@@ -500,103 +500,32 @@ def validate_mlbb_gopay_sync(user_id, server_id):
 
 async def read_number_from_photo_online(message):
     try:
+        if not OCR_SPACE_API_KEY:
+            return None
+        logger.info("📸 Downloading captcha photo...")
         photo_path = await message.download_media()
         downloaded_photos.append(photo_path)
-
-        with open(photo_path, "rb") as f:
-            base64_image = base64.b64encode(f.read()).decode("utf-8")
-
-        base64_data = f"data:image/jpeg;base64,{base64_image}"
-
-        boundary = f"----WebKitFormBoundary{uuid.uuid4().hex}"
-        headers = {
-            "accept": "text/x-component",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "referer": "https://vheer.com/app/image-to-text",
-            "content-type": f"multipart/form-data; boundary={boundary}"
-        }
-
-        def build_form():
-            parts = []
-            
-            def add_field(name, value):
-                parts.append(f"--{boundary}")
-                parts.append(f'Content-Disposition: form-data; name="{name}"\r\n')
-                parts.append(value)
-
-            add_field("1_imageBase64", base64_data)
-            add_field("1_languageIndex", "ENG")
-            add_field("0", f'["$K1","{uuid.uuid4().hex[:10]}"]')
-
-            parts.append(f"--{boundary}--\r\n")
-            return "\r\n".join(parts)
-
-        body = build_form()
-
+        with open(photo_path, 'rb') as f:
+            image_data = base64.b64encode(f.read()).decode('utf-8')
         response = requests.post(
-            "https://vheer.com/app/image-to-text",
-            data=body.encode(),
-            headers=headers,
+            'https://api.ocr.space/parse/image',
+            data={
+                'base64Image': f'data:image/jpeg;base64,{image_data}',
+                'apikey': OCR_SPACE_API_KEY,
+                'language': 'eng',
+                'OCREngine': '2'
+            },
             timeout=60
         )
-
         if response.status_code == 200:
-            try:
-                raw_text = response.text
-                
-                # Coba parsing dengan metode yang lebih aman
-                lines = raw_text.strip().split('\n')
-                
-                if len(lines) < 2:
-                    logger.warning(f"Response terlalu pendek: {raw_text[:200]}")
-                    return None
-                
-                # Coba ambil baris kedua
-                second_line = lines[1]
-                
-                # Cek apakah formatnya sesuai (dimulai dengan angka atau kurung)
-                if second_line.startswith('[') or second_line.startswith('{'):
-                    # Coba parsing sebagai JSON
-                    try:
-                        # Hapus karakter aneh di awal jika ada
-                        if second_line.startswith(']') or second_line.startswith('}'):
-                            second_line = second_line[1:]
-                        
-                        parsed = json.loads(second_line)
-                        
-                        # Coba ekstrak text dari berbagai kemungkinan struktur
-                        extracted_text = None
-                        if isinstance(parsed, dict):
-                            extracted_text = parsed.get('text') or parsed.get('result') or parsed.get('data')
-                        elif isinstance(parsed, list) and len(parsed) > 0:
-                            if isinstance(parsed[0], dict):
-                                extracted_text = parsed[0].get('text')
-                            else:
-                                extracted_text = str(parsed[0])
-                        
-                        if extracted_text:
-                            # Ambil hanya angka 6 digit
-                            digits = re.sub(r'[^0-9]', '', str(extracted_text))
-                            if len(digits) >= 6:
-                                return digits[:6]
-                    except json.JSONDecodeError:
-                        # Jika bukan JSON, coba regex langsung
-                        pass
-                
-                # Fallback: cari angka 6 digit di seluruh response
-                all_digits = re.findall(r'\d{6}', raw_text)
-                if all_digits:
-                    return all_digits[0]
-                
-                return None
-                
-            except Exception as e:
-                logger.error(f"❌ Parse error: {e}")
-                logger.debug(f"Response text: {response.text[:500]}")
-                return None
-
+            result = response.json()
+            if not result.get('IsErroredOnProcessing'):
+                text = result.get('ParsedResults', [{}])[0].get('ParsedText', '')
+                text = re.sub(r'[^0-9]', '', text)
+                match = re.search(r'(\d{6})', text)
+                if match:
+                    return match.group(1)
         return None
-
     except Exception as e:
         logger.error(f"❌ OCR error: {e}")
         return None
