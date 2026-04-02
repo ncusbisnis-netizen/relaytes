@@ -18,6 +18,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ==================== FILTER LOG UNTUK GRUP TERTENTU ====================
+# Grup yang log-nya mau disembunyikan
+SILENT_GROUPS = [
+    'bengkelmlbb_info',
+    'jebraytools',
+]
+
+class GroupLogFilter(logging.Filter):
+    def filter(self, record):
+        msg = record.getMessage()
+        for group in SILENT_GROUPS:
+            if group in msg.lower():
+                return False
+        return True
+
+# Terapkan filter
+for handler in logging.root.handlers:
+    handler.addFilter(GroupLogFilter())
+
 # ==================== KONFIGURASI ====================
 API_ID = int(os.environ.get('API_ID', 0))
 API_HASH = os.environ.get('API_HASH', '')
@@ -571,7 +590,10 @@ async def read_number_from_photo_online(message):
             patterns = [
                 r'(\d{6})',           # 6 digit berurutan
                 r'(\d{3})\s*(\d{3})', # 3 digit spasi 3 digit
-                r'(\d{2})\s*(\d{2})\s*(\d{2})' # 2-2-2
+                r'(\d{2})\s*(\d{2})\s*(\d{2})', # 2-2-2
+                r'(\d)\s*(\d)\s*(\d)\s*(\d)\s*(\d)\s*(\d)', # 1 spasi 1
+                r'(\d{4})\s*(\d{2})', # 4-2
+                r'(\d{2})\s*(\d{4})', # 2-4
             ]
             
             for pattern in patterns:
@@ -588,6 +610,12 @@ async def read_number_from_photo_online(message):
             if len(digits) >= 6:
                 captcha_code = digits[:6]
                 logger.info(f"✅ Captcha detected (fallback): {captcha_code}")
+                return captcha_code
+            
+            # Jika hanya 5 digit, coba dengan tambahan 0 di depan
+            if len(digits) == 5:
+                captcha_code = '0' + digits
+                logger.info(f"⚠️ Hanya 5 digit, coba dengan 0 depan: {captcha_code}")
                 return captcha_code
             
             logger.warning(f"⚠️ Tidak menemukan 6 digit: {parsed_text[:100]}")
@@ -1346,6 +1374,11 @@ async def auto_redeem_vcr_handler(event):
     chat_username = getattr(chat, 'username', None)
     chat_title = getattr(chat, 'title', '')
     
+    # JANGAN LOG UNTUK GRUP INI - LANGSUNG RETURN TANPA LOG
+    for silent in SILENT_GROUPS:
+        if silent in chat_title.lower() or (chat_username and silent == chat_username):
+            return
+    
     is_target = (
         chat_username == AUTO_REDEEM_CHANNEL or
         AUTO_REDEEM_CHANNEL in chat_title.lower()
@@ -1361,6 +1394,7 @@ async def auto_redeem_vcr_handler(event):
     if not text:
         return
     
+    # Log hanya untuk yang penting
     logger.info(f"📨 New message from {chat_title}")
     
     if not has_vcr(text):
@@ -1389,6 +1423,11 @@ async def auto_redeem_jebray_handler(event):
     chat_username = getattr(chat, 'username', None)
     chat_title = getattr(chat, 'title', '')
     
+    # JANGAN LOG UNTUK GRUP INI - LANGSUNG RETURN TANPA LOG
+    for silent in SILENT_GROUPS:
+        if silent in chat_title.lower() or (chat_username and silent == chat_username):
+            return
+    
     is_target = (
         chat_username == AUTO_REDEEM_JEBRAY_CHANNEL or
         AUTO_REDEEM_JEBRAY_CHANNEL in chat_title.lower()
@@ -1404,6 +1443,7 @@ async def auto_redeem_jebray_handler(event):
     if not text:
         return
     
+    # Log hanya untuk yang penting
     logger.info(f"📨 New message from {chat_title}")
     
     if not has_jebray(text):
@@ -1612,6 +1652,7 @@ async def main():
     logger.info(f"📊 Auto Redeem JEBRAY: {'✅ ACTIVE' if AUTO_REDEEM_JEBRAY_ENABLED else '❌ DISABLED'}")
     logger.info(f"📊 Forward Telegram: {'✅ ACTIVE' if FORWARD_ENABLED else '❌ DISABLED'} to @{FORWARD_TARGET}")
     logger.info(f"📊 Auto Share: {'✅ ACTIVE' if AUTO_SHARE_ENABLED else '❌ DISABLED'}")
+    logger.info(f"🔇 Silent groups: {SILENT_GROUPS}")
 
     auto_redeem.load()
     auto_redeem_jebray.load()
