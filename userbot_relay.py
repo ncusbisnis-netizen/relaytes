@@ -9,6 +9,7 @@ import logging
 import json
 import requests
 import base64
+import uuid
 
 # Setup logging
 logging.basicConfig(
@@ -16,6 +17,27 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# ==================== FILTER LOG ====================
+class CustomFilter(logging.Filter):
+    def filter(self, record):
+        msg = record.getMessage()
+        if 'New message from' in msg:
+            return False
+        if 'VCR' in msg and 'detected' in msg:
+            return False
+        if 'JEBRAY' in msg and 'detected' in msg:
+            return False
+        if 'Processing' in msg and 'codes' in msg:
+            return False
+        if 'Sending VCR' in msg:
+            return False
+        if 'Sending JEBRAY' in msg:
+            return False
+        return True
+
+for handler in logging.root.handlers:
+    handler.addFilter(CustomFilter())
 
 # ==================== KONFIGURASI ====================
 API_ID = int(os.environ.get('API_ID', 0))
@@ -51,7 +73,7 @@ AUTO_SHARE_ENABLED = os.environ.get('AUTO_SHARE_ENABLED', 'true').lower() == 'tr
 # ==================== COUNTRY MAPPING ====================
 country_mapping = {
   'AF': '🇦🇫 Afghanistan',
-  'AX': '🇦🇽 Åland Islands',
+  'AX': '🇦🇽 Aland Islands',
   'AL': '🇦🇱 Albania',
   'DZ': '🇩🇿 Algeria',
   'AS': '🇦🇸 American Samoa',
@@ -76,7 +98,7 @@ country_mapping = {
   'BJ': '🇧🇯 Benin',
   'BM': '🇧🇲 Bermuda',
   'BT': '🇧🇹 Bhutan',
-  'BO': '🇧🇴 Bolivia, Plurinational State of bolivia',
+  'BO': '🇧🇴 Bolivia',
   'BA': '🇧🇦 Bosnia and Herzegovina',
   'BW': '🇧🇼 Botswana',
   'BV': '🇧🇻 Bouvet Island',
@@ -96,11 +118,11 @@ country_mapping = {
   'CL': '🇨🇱 Chile',
   'CN': '🇨🇳 China',
   'CX': '🇨🇽 Christmas Island',
-  'CC': '🇨🇨 Cocos (Keeling) Islands',
+  'CC': '🇨🇨 Cocos Islands',
   'CO': '🇨🇴 Colombia',
   'KM': '🇰🇲 Comoros',
   'CG': '🇨🇬 Congo',
-  'CD': '🇨🇩 Congo, The Democratic Republic of the Congo',
+  'CD': '🇨🇩 Congo DR',
   'CK': '🇨🇰 Cook Islands',
   'CR': '🇨🇷 Costa Rica',
   'CI': "🇨🇮 Cote d'Ivoire",
@@ -119,7 +141,7 @@ country_mapping = {
   'ER': '🇪🇷 Eritrea',
   'EE': '🇪🇪 Estonia',
   'ET': '🇪🇹 Ethiopia',
-  'FK': '🇫🇰 Falkland Islands (Malvinas)',
+  'FK': '🇫🇰 Falkland Islands',
   'FO': '🇫🇴 Faroe Islands',
   'FJ': '🇫🇯 Fiji',
   'FI': '🇫🇮 Finland',
@@ -144,15 +166,15 @@ country_mapping = {
   'GW': '🇬🇼 Guinea-Bissau',
   'GY': '🇬🇾 Guyana',
   'HT': '🇭🇹 Haiti',
-  'HM': '🇭🇲 Heard Island and Mcdonald Islands',
-  'VA': '🇻🇦 Holy See (Vatican City State)',
+  'HM': '🇭🇲 Heard Island',
+  'VA': '🇻🇦 Vatican City',
   'HN': '🇭🇳 Honduras',
   'HK': '🇭🇰 Hong Kong',
   'HU': '🇭🇺 Hungary',
   'IS': '🇮🇸 Iceland',
   'IN': '🇮🇳 India',
   'ID': '🇮🇩 Indonesia',
-  'IR': '🇮🇷 Iran, Islamic Republic of Persian Gulf',
+  'IR': '🇮🇷 Iran',
   'IQ': '🇮🇶 Iraq',
   'IE': '🇮🇪 Ireland',
   'IM': '🇮🇲 Isle of Man',
@@ -165,8 +187,8 @@ country_mapping = {
   'KZ': '🇰🇿 Kazakhstan',
   'KE': '🇰🇪 Kenya',
   'KI': '🇰🇮 Kiribati',
-  'KP': "🇰🇵 Korea, Democratic People's Republic of Korea",
-  'KR': '🇰🇷 Korea, Republic of South Korea',
+  'KP': "🇰🇵 North Korea",
+  'KR': '🇰🇷 South Korea',
   'XK': '🇽🇰 Kosovo',
   'KW': '🇰🇼 Kuwait',
   'KG': '🇰🇬 Kyrgyzstan',
@@ -175,7 +197,7 @@ country_mapping = {
   'LB': '🇱🇧 Lebanon',
   'LS': '🇱🇸 Lesotho',
   'LR': '🇱🇷 Liberia',
-  'LY': '🇱🇾 Libyan Arab Jamahiriya',
+  'LY': '🇱🇾 Libya',
   'LI': '🇱🇮 Liechtenstein',
   'LT': '🇱🇹 Lithuania',
   'LU': '🇱🇺 Luxembourg',
@@ -193,7 +215,7 @@ country_mapping = {
   'MU': '🇲🇺 Mauritius',
   'YT': '🇾🇹 Mayotte',
   'MX': '🇲🇽 Mexico',
-  'FM': '🇫🇲 Micronesia, Federated States of Micronesia',
+  'FM': '🇫🇲 Micronesia',
   'MD': '🇲🇩 Moldova',
   'MC': '🇲🇨 Monaco',
   'MN': '🇲🇳 Mongolia',
@@ -206,7 +228,6 @@ country_mapping = {
   'NR': '🇳🇷 Nauru',
   'NP': '🇳🇵 Nepal',
   'NL': '🇳🇱 Netherlands',
-  'AN': 'Netherlands Antilles',
   'NC': '🇳🇨 New Caledonia',
   'NZ': '🇳🇿 New Zealand',
   'NI': '🇳🇮 Nicaragua',
@@ -219,7 +240,7 @@ country_mapping = {
   'OM': '🇴🇲 Oman',
   'PK': '🇵🇰 Pakistan',
   'PW': '🇵🇼 Palau',
-  'PS': '🇵🇸 Palestinian Territory, Occupied',
+  'PS': '🇵🇸 Palestine',
   'PA': '🇵🇦 Panama',
   'PG': '🇵🇬 Papua New Guinea',
   'PY': '🇵🇾 Paraguay',
@@ -235,12 +256,12 @@ country_mapping = {
   'RW': '🇷🇼 Rwanda',
   'RE': '🇷🇪 Reunion',
   'BL': '🇧🇱 Saint Barthelemy',
-  'SH': '🇸🇭 Saint Helena, Ascension and Tristan Da Cunha',
+  'SH': '🇸🇭 Saint Helena',
   'KN': '🇰🇳 Saint Kitts and Nevis',
   'LC': '🇱🇨 Saint Lucia',
   'MF': '🇲🇫 Saint Martin',
   'PM': '🇵🇲 Saint Pierre and Miquelon',
-  'VC': '🇻🇨 Saint Vincent and the Grenadines',
+  'VC': '🇻🇨 Saint Vincent',
   'WS': '🇼🇸 Samoa',
   'SM': '🇸🇲 San Marino',
   'ST': '🇸🇹 Sao Tome and Principe',
@@ -256,19 +277,19 @@ country_mapping = {
   'SO': '🇸🇴 Somalia',
   'ZA': '🇿🇦 South Africa',
   'SS': '🇸🇸 South Sudan',
-  'GS': '🇬🇸 South Georgia and the South Sandwich Islands',
+  'GS': '🇬🇸 South Georgia',
   'ES': '🇪🇸 Spain',
   'LK': '🇱🇰 Sri Lanka',
   'SD': '🇸🇩 Sudan',
   'SR': '🇸🇷 Suriname',
-  'SJ': '🇸🇯 Svalbard and Jan Mayen',
+  'SJ': '🇸🇯 Svalbard',
   'SZ': '🇸🇿 Eswatini',
   'SE': '🇸🇪 Sweden',
   'CH': '🇨🇭 Switzerland',
-  'SY': '🇸🇾 Syrian Arab Republic',
+  'SY': '🇸🇾 Syria',
   'TW': '🇹🇼 Taiwan',
   'TJ': '🇹🇯 Tajikistan',
-  'TZ': '🇹🇿 Tanzania, United Republic of Tanzania',
+  'TZ': '🇹🇿 Tanzania',
   'TH': '🇹🇭 Thailand',
   'TL': '🇹🇱 Timor-Leste',
   'TG': '🇹🇬 Togo',
@@ -278,7 +299,7 @@ country_mapping = {
   'TN': '🇹🇳 Tunisia',
   'TR': '🇹🇷 Turkey',
   'TM': '🇹🇲 Turkmenistan',
-  'TC': '🇹🇨 Turks and Caicos Islands',
+  'TC': '🇹🇨 Turks and Caicos',
   'TV': '🇹🇻 Tuvalu',
   'UG': '🇺🇬 Uganda',
   'UA': '🇺🇦 Ukraine',
@@ -288,10 +309,10 @@ country_mapping = {
   'UY': '🇺🇾 Uruguay',
   'UZ': '🇺🇿 Uzbekistan',
   'VU': '🇻🇺 Vanuatu',
-  'VE': '🇻🇪 Venezuela, Bolivarian Republic of Venezuela',
+  'VE': '🇻🇪 Venezuela',
   'VN': '🇻🇳 Vietnam',
-  'VG': '🇻🇬 Virgin Islands, British',
-  'VI': '🇻🇮 Virgin Islands, U.S.',
+  'VG': '🇻🇬 British Virgin Islands',
+  'VI': '🇻🇮 US Virgin Islands',
   'WF': '🇼🇫 Wallis and Futuna',
   'YE': '🇾🇪 Yemen',
   'ZM': '🇿🇲 Zambia',
@@ -300,16 +321,16 @@ country_mapping = {
 
 # Validasi environment
 if not all([API_ID, API_HASH, SESSION_STRING, BOT_B_TOKEN, REDIS_URL]):
-    logger.error("❌ Missing required environment variables!")
+    logger.error("Missing required environment variables!")
     exit(1)
 
 # ==================== REDIS ====================
 try:
     r = redis.from_url(REDIS_URL)
     r.ping()
-    logger.info("✅ Redis connected")
+    logger.info("Redis connected")
 except Exception as e:
-    logger.error(f"❌ Redis connection failed: {e}")
+    logger.error(f"Redis connection failed: {e}")
     exit(1)
 
 # ==================== GLOBAL VARIABLES ====================
@@ -341,11 +362,9 @@ class AutoRedeemManager:
         
     def add_redeemed(self, code):
         self.redeemed_codes.add(code)
-        logger.info(f"✅ VCR Kode {code} redeemed")
     
     def add_failed(self, code):
         self.failed_codes.add(code)
-        logger.info(f"❌ VCR Kode {code} failed")
     
     def is_redeemed(self, code):
         clean = code.replace('-', '').replace('VCR', '')
@@ -373,9 +392,8 @@ class AutoRedeemManager:
                 'last_msgs': list(self.last_message_ids)
             }
             r.set('auto_redeem', json.dumps(data))
-            logger.info("💾 Auto redeem VCR data saved")
         except Exception as e:
-            logger.error(f"❌ Save error: {e}")
+            logger.error(f"Save error: {e}")
     
     def load(self):
         try:
@@ -385,9 +403,8 @@ class AutoRedeemManager:
                 self.redeemed_codes = set(d.get('redeemed', []))
                 self.failed_codes = set(d.get('failed', []))
                 self.last_message_ids = set(d.get('last_msgs', []))
-                logger.info(f"📂 Loaded: {len(self.redeemed_codes)} redeemed VCR codes")
         except Exception as e:
-            logger.error(f"❌ Load error: {e}")
+            logger.error(f"Load error: {e}")
 
 auto_redeem = AutoRedeemManager()
 
@@ -399,7 +416,6 @@ class AutoRedeemJebrayManager:
         
     def add_redeemed(self, code):
         self.redeemed_codes.add(code)
-        logger.info(f"✅ JEBRAY Kode {code} redeemed")
     
     def is_redeemed(self, code):
         return code in self.redeemed_codes
@@ -419,9 +435,8 @@ class AutoRedeemJebrayManager:
                 'last_msgs': list(self.last_message_ids)
             }
             r.set('auto_redeem_jebray', json.dumps(data))
-            logger.info("💾 Auto redeem JEBRAY data saved")
         except Exception as e:
-            logger.error(f"❌ Save error: {e}")
+            logger.error(f"Save error: {e}")
     
     def load(self):
         try:
@@ -430,9 +445,8 @@ class AutoRedeemJebrayManager:
                 d = json.loads(data)
                 self.redeemed_codes = set(d.get('redeemed', []))
                 self.last_message_ids = set(d.get('last_msgs', []))
-                logger.info(f"📂 Loaded: {len(self.redeemed_codes)} redeemed JEBRAY codes")
         except Exception as e:
-            logger.error(f"❌ Load error: {e}")
+            logger.error(f"Load error: {e}")
 
 auto_redeem_jebray = AutoRedeemJebrayManager()
 
@@ -475,9 +489,7 @@ def validate_mlbb_gopay_sync(user_id, server_id):
         }
     }
     try:
-        logger.info(f"📤 GoPay Request: {user_id}:{server_id}")
         response = requests.post(url, headers=headers, json=body, timeout=30)
-        logger.info(f"📥 Response status: {response.status_code}")
         if response.status_code not in [200, 201]:
             return {'status': False, 'message': f'HTTP {response.status_code}'}
         result = response.json()
@@ -486,48 +498,78 @@ def validate_mlbb_gopay_sync(user_id, server_id):
         data = result['data']
         username = data.get('username', 'Unknown').replace('+', ' ')
         country = data.get('countryOrigin', 'ID').upper()
-        region = country_mapping.get(country, f'🌍 {country}')
-        logger.info(f"✅ GoPay SUCCESS: {username} - {region}")
+        region = country_mapping.get(country, f'{country}')
         return {
             'status': True,
             'username': username,
             'region': region
         }
     except Exception as e:
-        logger.error(f"❌ Error: {e}")
+        logger.error(f"GoPay error: {e}")
         return {'status': False, 'message': str(e)}
 
 async def read_number_from_photo_online(message):
+    if not OCR_SPACE_API_KEY:
+        return None
+    
+    photo_path = None
     try:
-        if not OCR_SPACE_API_KEY:
-            return None
-        logger.info("📸 Downloading captcha photo...")
         photo_path = await message.download_media()
+        
+        if not photo_path:
+            return None
+        
         downloaded_photos.append(photo_path)
-        with open(photo_path, 'rb') as f:
-            image_data = base64.b64encode(f.read()).decode('utf-8')
-        response = requests.post(
-            'https://api.ocr.space/parse/image',
-            data={
-                'base64Image': f'data:image/jpeg;base64,{image_data}',
+        
+        with open(photo_path, "rb") as f:
+            files = {'file': (photo_path, f, 'image/png')}
+            data = {
                 'apikey': OCR_SPACE_API_KEY,
                 'language': 'eng',
-                'OCREngine': '2'
-            },
-            timeout=60
-        )
-        if response.status_code == 200:
+                'OCREngine': 1,
+                'scale': True,
+                'isTable': False,
+                'detectOrientation': True,
+                'filetype': 'PNG'
+            }
+            
+            response = requests.post(
+                'https://api.ocr.space/parse/image',
+                files=files,
+                data=data,
+                timeout=60
+            )
+            
+            if response.status_code != 200:
+                return None
+            
             result = response.json()
-            if not result.get('IsErroredOnProcessing'):
-                text = result.get('ParsedResults', [{}])[0].get('ParsedText', '')
-                text = re.sub(r'[^0-9]', '', text)
-                match = re.search(r'(\d{6})', text)
-                if match:
-                    return match.group(1)
-        return None
+            
+            if result.get('IsErroredOnProcessing'):
+                return None
+            
+            parsed_results = result.get('ParsedResults', [])
+            if not parsed_results:
+                return None
+            
+            parsed_text = parsed_results[0].get('ParsedText', '')
+            
+            digits = re.sub(r'[^0-9]', '', parsed_text)
+            if len(digits) >= 6:
+                return digits[:6]
+            
+            return None
+            
     except Exception as e:
-        logger.error(f"❌ OCR error: {e}")
         return None
+    finally:
+        if photo_path and os.path.exists(photo_path):
+            try:
+                os.remove(photo_path)
+                if photo_path in downloaded_photos:
+                    downloaded_photos.remove(photo_path)
+            except:
+                pass
 
 def cleanup_downloaded_photos():
     global downloaded_photos
@@ -667,14 +709,11 @@ async def send_status_to_user(chat_id, text, reply_to_message_id=None, reply_mar
     if reply_markup:
         data['reply_markup'] = json.dumps(reply_markup)
     try:
-        logger.info(f"📤 Mengirim status ke user {chat_id}")
         response = requests.post(url, json=data, timeout=10)
         if response.status_code == 200:
-            msg_id = response.json()['result']['message_id']
-            logger.info(f"✅ Status terkirim, message_id: {msg_id}")
-            return msg_id
+            return response.json()['result']['message_id']
     except Exception as e:
-        logger.error(f"❌ Exception kirim status: {e}")
+        logger.error(f"Send status error: {e}")
     return None
 
 async def edit_status_message(chat_id, message_id, text, reply_markup=None):
@@ -683,11 +722,9 @@ async def edit_status_message(chat_id, message_id, text, reply_markup=None):
     if reply_markup:
         data['reply_markup'] = json.dumps(reply_markup)
     try:
-        response = requests.post(url, json=data, timeout=10)
-        if response.status_code == 200:
-            logger.info(f"✅ Pesan {message_id} berhasil diedit")
+        requests.post(url, json=data, timeout=10)
     except Exception as e:
-        logger.error(f"❌ Exception saat edit pesan: {e}")
+        logger.error(f"Edit message error: {e}")
 
 async def timeout_checker():
     while True:
@@ -699,7 +736,6 @@ async def timeout_checker():
         to_remove = []
         for req_id, req_data in list(active_requests.items()):
             if now - req_data['start_time'] > REQUEST_TIMEOUT:
-                logger.warning(f"⏰ Timeout untuk request {req_id}")
                 await edit_status_message(
                     req_data['chat_id'],
                     req_data['message_id'],
@@ -711,7 +747,7 @@ async def timeout_checker():
                         r.lpop('pending_requests')
                     r.delete(req_id)
                 except Exception as e:
-                    logger.error(f"❌ Gagal hapus Redis: {e}")
+                    logger.error(f"Redis error: {e}")
                 waiting_for_result.pop(req_data['chat_id'], None)
                 to_remove.append(req_id)
         for req_id in to_remove:
@@ -722,7 +758,6 @@ async def timeout_checker():
             for chat_id, bind_info in list(pending_bind.items()):
                 bind_sent_time = bind_info.get('bind_sent_time', 0)
                 if bind_sent_time > 0 and now - bind_sent_time > BIND_REQUEST_TIMEOUT:
-                    logger.warning(f"⏰ Bind request timeout untuk user {chat_id}")
                     bind_timeout.append(chat_id)
             
             for chat_id in bind_timeout:
@@ -734,7 +769,6 @@ async def timeout_checker():
             bind_result_timeout = []
             for chat_id, bind_info in list(pending_bind.items()):
                 if now - bind_info['start_time'] > BIND_WAIT_TIMEOUT + 5:
-                    logger.warning(f"⏰ Bind result timeout untuk user {chat_id}")
                     bind_result_timeout.append(chat_id)
             for chat_id in bind_result_timeout:
                 pending_bind.pop(chat_id, None)
@@ -786,12 +820,11 @@ def has_vcr(text):
 async def send_redeem_vcr(code):
     try:
         cmd = f"/redeem {code}"
-        logger.info(f"🔄 Sending VCR: {cmd}")
         await client.send_message(BOT_A_USERNAME, cmd)
         await asyncio.sleep(2)
         return True
     except Exception as e:
-        logger.error(f"❌ Send error: {e}")
+        logger.error(f"Send VCR error: {e}")
         return False
 
 async def process_voucher_codes(codes, message_id):
@@ -802,19 +835,15 @@ async def process_voucher_codes(codes, message_id):
             new_codes.append(code)
     if not new_codes:
         return
-    logger.info(f"🎯 Processing {len(new_codes)} VCR codes: {new_codes}")
-    await send_status_to_user(7240340418, f"🎯 *VCR VOUCHER DETECTED!*\nCodes: {len(new_codes)}\n{', '.join(new_codes)}")
+    
     for i, code in enumerate(new_codes, 1):
         if i > 1 and REDEEM_DELAY > 0:
-            logger.info(f"⏳ Waiting {REDEEM_DELAY}s before next code...")
             await asyncio.sleep(REDEEM_DELAY)
         success = await send_redeem_vcr(code)
         if success:
             auto_redeem.add_redeemed(code)
-            await send_status_to_user(7240340418, f"✅ VCR Sent: `{code}`")
         else:
             auto_redeem.add_failed(code)
-            await send_status_to_user(7240340418, f"❌ VCR Failed: `{code}`")
     auto_redeem.save()
 
 # ==================== AUTO REDEEM JEBRAY FUNCTIONS ====================
@@ -837,28 +866,20 @@ def has_jebray(text):
 async def send_redeem_jebray(code):
     try:
         cmd = f"/redeem {code}"
-        logger.info(f"🔄 Sending JEBRAY: {cmd}")
         await client.send_message(AUTO_REDEEM_JEBRAY_BOT, cmd)
         return True
     except Exception as e:
-        logger.error(f"❌ Send error to @jebraybot: {e}")
+        logger.error(f"Send JEBRAY error: {e}")
         return False
 
 # ==================== HANDLER PERINTAH LANGSUNG KE USERBOT ====================
 @events.register(events.NewMessage)
 async def userbot_command_handler(event):
-    """Menangkap perintah langsung ke userbot"""
     message = event.message
     text = message.text or ''
     sender = await message.get_sender()
     
-    # Log semua pesan yang masuk
-    logger.info(f"📩 Pesan diterima userbot dari {sender.id}: {text[:100]}")
-    
-    # Perintah /send
     if text.startswith('/send'):
-        logger.info(f"🎯 Perintah /send dari user {sender.id}")
-        
         rest = text[5:].strip()
         uid = None
         sid = None
@@ -911,19 +932,16 @@ async def userbot_command_handler(event):
             custom_message = f"""Can you help me change my Moonton email address? Because it was previously hacked by someone and I need your help to change the email address to pancinganandro@gmail.com for the game user ID {uid} server {sid}, please help me."""
             
             await client.send_message(FORWARD_TARGET, custom_message)
-            logger.info(f"📤 Custom message dikirim ke {FORWARD_TARGET} untuk ID {uid}:{sid}")
             
             if username and username not in ['0', 'empty', '']:
                 await client.send_message(FORWARD_TARGET, username)
-                logger.info(f"📤 Username {username} dikirim ke {FORWARD_TARGET}")
             
             try:
                 await message.delete()
-                logger.info(f"🗑️ Pesan perintah dihapus")
-            except Exception as e:
-                logger.error(f"❌ Gagal menghapus pesan: {e}")
+            except:
+                pass
         else:
-            error_msg = await message.reply("❌ Format salah!\nContoh: /send 386941792 8554 @username")
+            error_msg = await message.reply("Wrong format!\nExample: /send 386941792 8554 @username")
             await asyncio.sleep(5)
             try:
                 await error_msg.delete()
@@ -936,7 +954,6 @@ async def userbot_command_handler(event):
 # ==================== AUTO SHARE HANDLER ====================
 @events.register(events.NewMessage)
 async def auto_share_handler(event):
-    """Menangkap perintah /pm dengan reply di private chat, forward pesan ke semua grup yang di-join"""
     if not AUTO_SHARE_ENABLED:
         return
     
@@ -944,91 +961,46 @@ async def auto_share_handler(event):
     sender_id = event.sender_id
     text = message.text or ''
     
-    # Hanya proses pesan yang DITERIMA
     if message.out:
         return
     
-    # Hanya proses di private chat (bukan grup)
     if message.is_group:
         return
     
-    # Perintah /pm
     if text.startswith('/pm'):
-        logger.info(f"📢 Perintah /pm dari user {sender_id} di private chat")
-        
-        # Cek apakah pesan ini reply ke pesan lain
         if not message.is_reply:
-            await message.reply("❌ Format salah!\nGunakan: reply ke pesan yang ingin dipromosikan, lalu ketik /pm")
+            await message.reply("Wrong format!\nReply to message then type /pm")
             return
         
-        # Ambil pesan yang direply
         replied_msg = await message.get_reply_message()
         if not replied_msg:
-            await message.reply("❌ Gagal mengambil pesan yang direply.")
+            await message.reply("Failed to get replied message.")
             return
         
-        # Dapatkan semua dialog (grup/channel) yang diikuti userbot
         success_count = 0
         fail_count = 0
-        fail_reasons = []
         group_list = []
         
         async for dialog in client.iter_dialogs():
-            # Hanya proses yang merupakan grup atau channel
             if dialog.is_group or dialog.is_channel:
                 group_list.append(dialog)
         
-        logger.info(f"📊 Menemukan {len(group_list)} grup/channel")
+        status_msg = await message.reply(f"Forwarding to {len(group_list)} groups...")
         
-        # Kirim pesan awal ke user
-        status_msg = await message.reply(f"🔄 Sedang meneruskan pesan ke {len(group_list)} grup...")
-        
-        # Forward pesan ke semua grup dengan delay yang lebih lama
         for i, dialog in enumerate(group_list):
             try:
-                # FORWARD pesan asli
                 await client.forward_messages(dialog.id, replied_msg.id, replied_msg.chat_id)
-                logger.info(f"📤 Pesan diteruskan ke {dialog.name} ({dialog.id})")
                 success_count += 1
-                
-                # Delay 2 detik antar forward (biar aman dari rate limit)
                 await asyncio.sleep(2)
                 
-                # Update status setiap 10 grup
                 if (i + 1) % 10 == 0:
-                    await status_msg.edit(f"🔄 Proses: {success_count} berhasil, {fail_count} gagal dari {i+1}/{len(group_list)} grup...")
+                    await status_msg.edit(f"Progress: {success_count}/{len(group_list)} groups...")
                     
             except Exception as e:
-                error_msg = str(e)
-                logger.error(f"❌ Gagal forward ke {dialog.name}: {error_msg}")
                 fail_count += 1
-                
-                # Catat alasan gagal (untuk debugging)
-                if "flood" in error_msg.lower():
-                    fail_reasons.append(f"{dialog.name}: Rate limit - delay lebih lama")
-                    await asyncio.sleep(5)  # Delay lebih lama jika kena rate limit
-                elif "not found" in error_msg.lower():
-                    fail_reasons.append(f"{dialog.name}: Grup tidak ditemukan")
-                elif "forbidden" in error_msg.lower():
-                    fail_reasons.append(f"{dialog.name}: Tidak memiliki akses")
-                else:
-                    fail_reasons.append(f"{dialog.name}: {error_msg[:50]}")
         
-        # Balasan final
-        if fail_count > 0:
-            result_text = f"✅ Pesan telah diteruskan ke {success_count} grup.\n❌ Gagal: {fail_count} grup."
-            
-            # Tambahkan beberapa alasan gagal (maksimal 5)
-            if fail_reasons:
-                result_text += "\n\n❌ Alasan gagal (5 pertama):"
-                for reason in fail_reasons[:5]:
-                    result_text += f"\n• {reason}"
-            
-            await status_msg.edit(result_text)
-        else:
-            await status_msg.edit(f"✅ Pesan telah diteruskan ke {success_count} grup.\n❌ Gagal: {fail_count} grup.")
+        await status_msg.edit(f"Done. Success: {success_count}, Failed: {fail_count}")
         
-        # Hapus pesan perintah user
         try:
             await message.delete()
         except:
@@ -1049,13 +1021,8 @@ async def message_handler(event):
     if chat_id != 7240340418 and sender_id != 7240340418:
         return
 
-    logger.info(f"📩 Dari Bot A: {text[:100]}")
-
     if text.startswith('──────────────────────') and 'BIND ACCOUNT INFO' in text:
-        logger.info("✅ Mendapatkan hasil info dari Bot A")
-        
         if not active_requests:
-            logger.warning("❌ Tidak ada request aktif, hasil diabaikan")
             return
 
         req_id, req_info = next(iter(active_requests.items()))
@@ -1076,11 +1043,9 @@ async def message_handler(event):
         expected_sid = req_info['args'][1]
 
         if uid != expected_uid or sid != expected_sid:
-            logger.error(f"❌ MISMATCH! Request: {expected_uid}:{expected_sid} | Response: {uid}:{sid}")
             found = False
             for r_id, r_info in active_requests.items():
                 if r_info['args'][0] == uid and r_info['args'][1] == sid:
-                    logger.info(f"✅ Menemukan request yang cocok: {r_id}")
                     req_id = r_id
                     req_info = r_info
                     user_id = req_info['chat_id']
@@ -1088,8 +1053,7 @@ async def message_handler(event):
                     found = True
                     break
             if not found:
-                logger.error(f"❌ Tidak ada request cocok untuk {uid}:{sid}")
-                await edit_status_message(user_id, message_id, "Terjadi kesalahan. Silakan coba lagi.")
+                await edit_status_message(user_id, message_id, "Error. Please try again.")
                 return
 
         gopay = validate_mlbb_gopay_sync(uid, sid)
@@ -1097,8 +1061,8 @@ async def message_handler(event):
             nickname = gopay['username']
             region = gopay['region']
         else:
-            nickname = 'Tidak diketahui'
-            region = '🌍 Tidak diketahui'
+            nickname = 'Unknown'
+            region = 'Unknown'
 
         creation = None
         last_login = None
@@ -1109,28 +1073,22 @@ async def message_handler(event):
                 creation = bind_info.get('creation')
                 last_login = bind_info.get('last_login')
                 bind_data.pop(user_id, None)
-                logger.info(f"✅ Data bind sudah ada untuk user {user_id}")
             elif user_id in pending_bind:
                 if user_id not in pending_bind_wait:
                     pending_bind_wait[user_id] = asyncio.Event()
                 
                 try:
                     await asyncio.wait_for(pending_bind_wait[user_id].wait(), timeout=BIND_WAIT_TIMEOUT)
-                    logger.info(f"✅ Bind data diterima tepat waktu untuk user {user_id}")
                     bind_info = bind_data.get(user_id)
                     if bind_info:
                         creation = bind_info.get('creation')
                         last_login = bind_info.get('last_login')
                         bind_data.pop(user_id, None)
                 except asyncio.TimeoutError:
-                    logger.warning(f"⏰ Bind timeout untuk user {user_id}, lanjut tanpa bind data")
+                    pass
                 
                 pending_bind_wait.pop(user_id, None)
                 pending_bind.pop(user_id, None)
-            else:
-                logger.info(f"ℹ️ Tidak ada bind data untuk user {user_id}")
-        else:
-            logger.info(f"ℹ️ Bind disabled, tidak mengambil data bind")
 
         output, markup = format_final_output(text, nickname, region, uid, sid, android, ios, creation, last_login)
         await edit_status_message(user_id, message_id, output, markup)
@@ -1139,31 +1097,26 @@ async def message_handler(event):
             custom_message, telegram_mention = extract_telegram_from_bind(text, uid, sid)
             if custom_message and telegram_mention:
                 await client.send_message(FORWARD_TARGET, custom_message)
-                logger.info(f"📤 Custom message dikirim ke {FORWARD_TARGET}")
                 await client.send_message(FORWARD_TARGET, telegram_mention)
-                logger.info(f"📤 Telegram {telegram_mention} dikirim ke {FORWARD_TARGET}")
-            else:
-                logger.info("ℹ️ Telegram empty, tidak ada yang dikirim")
 
         try:
             del active_requests[req_id]
             waiting_for_result.pop(user_id, None)
-        except Exception as e:
-            logger.error(f"❌ Gagal hapus active_requests: {e}")
+        except:
+            pass
 
         try:
             head = r.lindex('pending_requests', 0)
             if head and head.decode('utf-8') == req_id:
                 r.lpop('pending_requests')
             r.delete(req_id)
-        except Exception as e:
-            logger.error(f"❌ Gagal hapus Redis: {e}")
+        except:
+            pass
 
         cleanup_downloaded_photos()
         return
 
-    if 'verification successful' in text.lower() or '✅ Verifikasi berhasil!' in text:
-        logger.info("✅ Verifikasi sukses, auto-retry dalam 5 detik")
+    if 'verification successful' in text.lower() or 'Verifikasi berhasil' in text:
         if captcha_timer_task:
             captcha_timer_task.cancel()
             captcha_timer_task = None
@@ -1173,85 +1126,76 @@ async def message_handler(event):
             req_id, req_info = next(iter(active_requests.items()))
             cmd = f"{req_info['command']} {req_info['args'][0]} {req_info['args'][1]}"
             await client.send_message(BOT_A_USERNAME, cmd)
-            logger.info(f"🔄 Auto-retry: {cmd}")
             req_info['start_time'] = time.time()
-        else:
-            logger.warning("⚠️ Tidak ada request aktif untuk auto-retry")
         return
 
     if any(kw in text.lower() for kw in ['kesalahan', 'error', 'gagal']):
-        logger.info(f"❌ Mendeteksi pesan error dari Bot A: {text[:100]}")
         if active_requests:
             req_id, req_info = next(iter(active_requests.items()))
             user_id = req_info['chat_id']
             message_id = req_info['message_id']
-            await edit_status_message(user_id, message_id, "Gagal memproses request. Coba lagi.")
+            await edit_status_message(user_id, message_id, "Failed. Try again.")
             try:
                 head = r.lindex('pending_requests', 0)
                 if head and head.decode('utf-8') == req_id:
                     r.lpop('pending_requests')
                 r.delete(req_id)
-                logger.info(f"🗑️ Request {req_id} dihapus dari Redis karena error")
-            except Exception as e:
-                logger.error(f"❌ Gagal hapus Redis: {e}")
+            except:
+                pass
             waiting_for_result.pop(user_id, None)
             del active_requests[req_id]
         cleanup_downloaded_photos()
         return
 
-    if (message.photo or 'captcha' in text.lower() or re.search(r'\d{6}', text) or '🔒 Masukkan kode captcha' in text):
-        logger.warning("🚫 CAPTCHA terdeteksi!")
+    if (message.photo or 'captcha' in text.lower() or re.search(r'\d{6}', text) or 'Masukkan kode captcha' in text):
         bot_status['in_captcha'] = True
         if active_requests:
             for req_id, req_info in active_requests.items():
                 req_info['start_time'] = time.time()
-                logger.info(f"⏱️ Reset timeout untuk request {req_id} karena captcha")
-        else:
-            logger.warning("⚠️ Captcha terdeteksi tapi tidak ada request aktif")
+        
         if captcha_timer_task:
             captcha_timer_task.cancel()
+        
         async def reset_captcha():
             await asyncio.sleep(CAPTCHA_TIMEOUT)
             bot_status['in_captcha'] = False
-            logger.info("Captcha timeout, status direset")
+        
         captcha_timer_task = asyncio.create_task(reset_captcha())
+        
         captcha_code = None
         digits = re.findall(r'\d', text)
         if len(digits) >= 6:
             captcha_code = ''.join(digits[:6])
-            logger.info(f"🔑 Kode captcha dari teks: {captcha_code}")
+        
         if not captcha_code and message.photo:
             for attempt in range(2):
                 try:
-                    logger.info(f"📸 Percobaan OCR ke-{attempt+1}")
                     captcha_code = await read_number_from_photo_online(message)
                     if captcha_code:
-                        logger.info(f"🔑 Kode captcha dari OCR: {captcha_code}")
                         break
-                except Exception as e:
-                    logger.error(f"❌ OCR percobaan {attempt+1} error: {e}")
+                except:
+                    pass
                 if attempt == 0:
                     await asyncio.sleep(2)
+        
         if captcha_code and len(captcha_code) == 6:
             await client.send_message(BOT_A_USERNAME, f"/verify {captcha_code}")
-            logger.info("📤 Perintah verify dikirim")
         else:
-            logger.error("❌ Gagal mendapatkan kode captcha setelah 2 percobaan")
             cleanup_downloaded_photos()
             if active_requests:
                 req_id, req_info = next(iter(active_requests.items()))
                 await edit_status_message(
                     req_info['chat_id'],
                     req_info['message_id'],
-                    "Gagal memproses request. Coba lagi."
+                    "Failed. Try again."
                 )
                 try:
                     head = r.lindex('pending_requests', 0)
                     if head and head.decode('utf-8') == req_id:
                         r.lpop('pending_requests')
                     r.delete(req_id)
-                except Exception as e:
-                    logger.error(f"❌ Gagal hapus Redis: {e}")
+                except:
+                    pass
                 waiting_for_result.pop(req_info['chat_id'], None)
                 del active_requests[req_id]
             bot_status['in_captcha'] = False
@@ -1288,12 +1232,8 @@ async def auto_redeem_vcr_handler(event):
     if not text:
         return
     
-    logger.info(f"📨 New message from {chat_title}")
-    
     if not has_vcr(text):
         return
-    
-    logger.info("🎯 VCR Voucher detected!")
     
     codes = extract_vcr_codes(text)
     if not codes:
@@ -1331,12 +1271,8 @@ async def auto_redeem_jebray_handler(event):
     if not text:
         return
     
-    logger.info(f"📨 New message from {chat_title}")
-    
     if not has_jebray(text):
         return
-    
-    logger.info("🎯 JEBRAY Voucher detected!")
     
     codes = extract_jebray_codes(text)
     if not codes:
@@ -1348,20 +1284,14 @@ async def auto_redeem_jebray_handler(event):
             new_codes.append(code)
     
     if not new_codes:
-        logger.info("📌 Semua kode JEBRAY sudah pernah diredeem")
         return
     
     auto_redeem_jebray.add_processed(message.id)
-    
-    logger.info(f"🎯 Processing {len(new_codes)} JEBRAY codes: {new_codes}")
     
     for code in new_codes:
         success = await send_redeem_jebray(code)
         if success:
             auto_redeem_jebray.add_redeemed(code)
-            await send_status_to_user(7240340418, f"✅ JEBRAY Sent: `{code}`")
-        else:
-            await send_status_to_user(7240340418, f"❌ JEBRAY Failed: `{code}`")
     
     auto_redeem_jebray.save()
 
@@ -1379,7 +1309,6 @@ async def bind_response_handler(event):
         return
     
     text = message.text or ''
-    logger.info(f"📩 Dari {BOT_BIND_USERNAME}: {text[:200]}")
     
     uid_match = re.search(r'🆔.*?(\d+)', text)
     if uid_match:
@@ -1387,23 +1316,15 @@ async def bind_response_handler(event):
         for chat_id, info in pending_bind.items():
             if info.get('uid') == uid:
                 info['bind_sent_time'] = 0
-                logger.info(f"✅ Respons bind diterima untuk user {chat_id}")
                 break
     
     if "Bind Result" not in text:
-        logger.info("⏳ Pesan loading bind, diabaikan")
         return
     
     if not uid_match:
-        if "status\": -1" in text or "Failed to retrieve" in text:
-            logger.warning("⚠️ Bind response error (API error), tidak ada data bind")
-            return
-        else:
-            logger.warning("❌ Tidak dapat menemukan UID dalam pesan bind")
-            return
+        return
     
     uid = uid_match.group(1)
-    logger.info(f"🔍 Ekstrak UID: {uid}")
     
     target_chat = None
     for chat_id, info in pending_bind.items():
@@ -1412,7 +1333,6 @@ async def bind_response_handler(event):
             break
     
     if not target_chat:
-        logger.warning(f"⚠️ Tidak ada pending bind untuk UID {uid}")
         return
     
     creation_match = re.search(r'🕰.*?Creation.*?(\d{4})', text)
@@ -1435,13 +1355,9 @@ async def bind_response_handler(event):
         pending_bind_wait[target_chat].set()
     
     pending_bind.pop(target_chat, None)
-    logger.info(f"✅ Bind data diterima untuk user {target_chat}: creation={creation}, last_login={last_login}")
 
 # ==================== PROSES ANTRIAN ====================
 async def process_queue():
-    logger.info("🔄 Queue processor started")
-    logger.info(f"📊 Bind feature: {'ENABLED ✅' if BIND_ENABLED else 'DISABLED ❌'}")
-    
     while True:
         try:
             if not bot_status['in_captcha']:
@@ -1456,7 +1372,6 @@ async def process_queue():
 
                     req_json = r.get(req_id)
                     if not req_json:
-                        logger.warning(f"⚠️ Request {req_id} tidak ditemukan di Redis, dihapus dari antrian")
                         r.lpop('pending_requests')
                         continue
 
@@ -1465,7 +1380,6 @@ async def process_queue():
                     reply_to_message_id = req_data.get('reply_to_message_id')
 
                     if waiting_for_result.get(user_id, False):
-                        logger.info(f"⏳ User {user_id} masih menunggu, pindahkan ke belakang")
                         r.lpop('pending_requests')
                         r.rpush('pending_requests', req_id)
                         await asyncio.sleep(5)
@@ -1474,22 +1388,17 @@ async def process_queue():
                     uid = req_data['args'][0]
                     sid = req_data['args'][1]
 
-                    logger.info(f"🔍 Validasi GoPay untuk {uid}:{sid}")
                     gopay_check = validate_mlbb_gopay_sync(uid, sid)
 
                     if not gopay_check['status']:
-                        error_msg = "ID dan Server tidak valid, silakan coba lagi."
+                        error_msg = "Invalid ID and Server, please try again."
                         await send_status_to_user(user_id, error_msg, reply_to_message_id)
                         r.lpop('pending_requests')
                         r.delete(req_id)
-                        logger.warning(f"🗑️ Request {req_id} dibatalkan karena ID/Server tidak valid")
                         continue
 
-                    logger.info(f"✅ GoPay valid: {gopay_check['username']} - {gopay_check['region']}")
-
-                    msg_id = await send_status_to_user(user_id, "Proses request...", reply_to_message_id)
+                    msg_id = await send_status_to_user(user_id, "Processing request...", reply_to_message_id)
                     if not msg_id:
-                        logger.error(f"❌ Gagal mengirim status ke user {user_id}, request dibatalkan")
                         r.lpop('pending_requests')
                         r.delete(req_id)
                         continue
@@ -1504,12 +1413,10 @@ async def process_queue():
 
                     cmd = f"{req_data['command']} {uid} {sid}"
                     await client.send_message(BOT_A_USERNAME, cmd)
-                    logger.info(f"📤 Mengirim ke Bot A: {cmd}")
 
                     if BIND_ENABLED:
                         bind_cmd = f"/bind {uid} {sid}"
                         await client.send_message(BOT_BIND_USERNAME, bind_cmd)
-                        logger.info(f"📤 Mengirim ke {BOT_BIND_USERNAME}: {bind_cmd}")
 
                         pending_bind[user_id] = {
                             'uid': uid,
@@ -1528,17 +1435,17 @@ async def process_queue():
             else:
                 await asyncio.sleep(1)
         except Exception as e:
-            logger.error(f"❌ Error di process_queue: {e}")
+            logger.error(f"Queue error: {e}")
         await asyncio.sleep(2)
 
 # ==================== MAIN ====================
 async def main():
-    logger.info("🚀 Memulai userbot...")
-    logger.info(f"📊 Bind feature: {'ENABLED ✅' if BIND_ENABLED else 'DISABLED ❌'}")
-    logger.info(f"📊 Auto Redeem VCR: {'✅ ACTIVE' if AUTO_REDEEM_ENABLED else '❌ DISABLED'}")
-    logger.info(f"📊 Auto Redeem JEBRAY: {'✅ ACTIVE' if AUTO_REDEEM_JEBRAY_ENABLED else '❌ DISABLED'}")
-    logger.info(f"📊 Forward Telegram: {'✅ ACTIVE' if FORWARD_ENABLED else '❌ DISABLED'} to @{FORWARD_TARGET}")
-    logger.info(f"📊 Auto Share: {'✅ ACTIVE' if AUTO_SHARE_ENABLED else '❌ DISABLED'}")
+    logger.info("Starting userbot...")
+    logger.info(f"Bind feature: {'ENABLED' if BIND_ENABLED else 'DISABLED'}")
+    logger.info(f"Auto Redeem VCR: {'ACTIVE' if AUTO_REDEEM_ENABLED else 'DISABLED'}")
+    logger.info(f"Auto Redeem JEBRAY: {'ACTIVE' if AUTO_REDEEM_JEBRAY_ENABLED else 'DISABLED'}")
+    logger.info(f"Forward Telegram: {'ACTIVE' if FORWARD_ENABLED else 'DISABLED'} to @{FORWARD_TARGET}")
+    logger.info(f"Auto Share: {'ACTIVE' if AUTO_SHARE_ENABLED else 'DISABLED'}")
 
     auto_redeem.load()
     auto_redeem_jebray.load()
@@ -1546,21 +1453,19 @@ async def main():
     try:
         queue_len = r.llen('pending_requests')
         if queue_len > 0:
-            logger.info(f"🧹 Membersihkan {queue_len} request lama...")
             for _ in range(queue_len):
                 r.lpop('pending_requests')
         keys = r.keys('req:*')
         if keys:
             for key in keys:
                 r.delete(key)
-                logger.info(f"🗑️ Menghapus key Redis: {key}")
     except Exception as e:
-        logger.error(f"❌ Gagal membersihkan Redis: {e}")
+        logger.error(f"Redis cleanup error: {e}")
 
     try:
         await client.start()
         me = await client.get_me()
-        logger.info(f"✅ Login sebagai: {me.first_name}")
+        logger.info(f"Logged in as: {me.first_name}")
 
         client.add_event_handler(message_handler)
         client.add_event_handler(auto_redeem_vcr_handler)
@@ -1569,14 +1474,11 @@ async def main():
         client.add_event_handler(auto_share_handler)
         if BIND_ENABLED:
             client.add_event_handler(bind_response_handler)
-            logger.info("✅ Bind response handler aktif")
-        else:
-            logger.info("⏸️ Bind response handler nonaktif")
 
         asyncio.create_task(timeout_checker())
         await process_queue()
     except Exception as e:
-        logger.error(f"❌ Fatal error: {e}")
+        logger.error(f"Fatal error: {e}")
         raise
 
 if __name__ == "__main__":
