@@ -499,46 +499,122 @@ def validate_mlbb_gopay_sync(user_id, server_id):
         return {'status': False, 'message': str(e)}
 
 async def read_number_from_photo_online(message):
+    """Gunakan OCR Space API dengan download yang lebih robust"""
+    if not OCR_SPACE_API_KEY:
+        logger.warning("⚠️ OCR_SPACE_API_KEY tidak diset, tidak bisa OCR")
+        return None
+    
+    photo_path = None
     try:
-        if not OCR_SPACE_API_KEY:
-            return None
+        # Download dengan timeout yang lebih panjang
         logger.info("📸 Downloading captcha photo...")
-        photo_path = await message.download_media()
+        try:
+            photo_path = await message.download_media(timeout=60)
+            if not photo_path:
+                logger.error("❌ Gagal download photo: path kosong")
+                return None
+        except asyncio.TimeoutError:
+            logger.error("❌ Timeout download photo")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Download error: {e}")
+            return None
+        
+        logger.info(f"✅ Photo downloaded: {photo_path}")
         downloaded_photos.append(photo_path)
-        with open(photo_path, 'rb') as f:
-            image_data = base64.b64encode(f.read()).decode('utf-8')
-        response = requests.post(
-            'https://api.ocr.space/parse/image',
-            data={
-                'base64Image': f'data:image/jpeg;base64,{image_data}',
+        
+        # Cek file size
+        if os.path.getsize(photo_path) < 100:
+            logger.error(f"❌ File terlalu kecil: {os.path.getsize(photo_path)} bytes")
+            return None
+        
+        # OCR dengan OCR Space
+        with open(photo_path, "rb") as f:
+            files = {
+                'file': (photo_path, f, 'image/png')
+            }
+            data = {
                 'apikey': OCR_SPACE_API_KEY,
                 'language': 'eng',
-                'OCREngine': '2'
-            },
-            timeout=60
-        )
-        if response.status_code == 200:
+                'OCREngine': 2,
+                'scale': True,
+                'isTable': False,
+                'detectOrientation': True,
+                'filetype': 'PNG'
+            }
+            
+            logger.info("📤 Mengirim ke OCR Space...")
+            response = requests.post(
+                'https://api.ocr.space/parse/image',
+                files=files,
+                data=data,
+                timeout=60
+            )
+            
+            if response.status_code != 200:
+                logger.error(f"❌ OCR Space HTTP {response.status_code}")
+                return None
+            
             result = response.json()
-            if not result.get('IsErroredOnProcessing'):
-                text = result.get('ParsedResults', [{}])[0].get('ParsedText', '')
-                text = re.sub(r'[^0-9]', '', text)
-                match = re.search(r'(\d{6})', text)
+            
+            if result.get('IsErroredOnProcessing'):
+                logger.error(f"❌ OCR Space Error: {result.get('ErrorMessage')}")
+                return None
+            
+            parsed_results = result.get('ParsedResults', [])
+            if not parsed_results:
+                logger.warning("⚠️ Tidak ada hasil OCR")
+                return None
+            
+            parsed_text = parsed_results[0].get('ParsedText', '')
+            logger.info(f"📝 OCR Result: {parsed_text[:200]}")
+            
+            # Cari 6 digit angka
+            # Bersihkan dari spasi dan karakter aneh
+            clean_text = re.sub(r'\s+', '', parsed_text)
+            
+            # Coba berbagai pattern
+            patterns = [
+                r'(\d{6})',           # 6 digit berurutan
+                r'(\d{3})\s*(\d{3})', # 3 digit spasi 3 digit
+                r'(\d{2})\s*(\d{2})\s*(\d{2})' # 2-2-2
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, parsed_text)
                 if match:
-                    return match.group(1)
+                    # Gabungkan semua grup
+                    code = ''.join(match.groups())
+                    if len(code) >= 6:
+                        captcha_code = code[:6]
+                        logger.info(f"✅ Captcha detected: {captcha_code}")
+                        return captcha_code
+            
+            # Fallback: ambil semua digit
+            digits = re.sub(r'[^0-9]', '', parsed_text)
+            if len(digits) >= 6:
+                captcha_code = digits[:6]
+                logger.info(f"✅ Captcha detected (fallback): {captcha_code}")
+                return captcha_code
+            
+            logger.warning(f"⚠️ Tidak menemukan 6 digit: {parsed_text[:100]}")
+            return None
+            
+    except requests.exceptions.Timeout:
+        logger.error("❌ OCR Space timeout")
         return None
     except Exception as e:
         logger.error(f"❌ OCR error: {e}")
         return None
-
-def cleanup_downloaded_photos():
-    global downloaded_photos
-    for photo_path in downloaded_photos[:]:
-        try:
-            if os.path.exists(photo_path):
+    finally:
+        # Cleanup
+        if photo_path and os.path.exists(photo_path):
+            try:
                 os.remove(photo_path)
-            downloaded_photos.remove(photo_path)
-        except:
-            pass
+                if photo_path in downloaded_photos:
+                    downloaded_photos.remove(photo_path)
+            except:
+                pass
 
 def extract_telegram_from_bind(text, uid=None, sid=None):
     telegram_value = None
