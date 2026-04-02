@@ -9,7 +9,6 @@ import logging
 import json
 import requests
 import base64
-import uuid
 
 # Setup logging
 logging.basicConfig(
@@ -17,25 +16,6 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-
-# ==================== FILTER LOG UNTUK GRUP TERTENTU ====================
-# Grup yang log-nya mau disembunyikan
-SILENT_GROUPS = [
-    'bengkelmlbb_info',
-    'jebraytools',
-]
-
-class GroupLogFilter(logging.Filter):
-    def filter(self, record):
-        msg = record.getMessage()
-        for group in SILENT_GROUPS:
-            if group in msg.lower():
-                return False
-        return True
-
-# Terapkan filter
-for handler in logging.root.handlers:
-    handler.addFilter(GroupLogFilter())
 
 # ==================== KONFIGURASI ====================
 API_ID = int(os.environ.get('API_ID', 0))
@@ -518,127 +498,46 @@ def validate_mlbb_gopay_sync(user_id, server_id):
         return {'status': False, 'message': str(e)}
 
 async def read_number_from_photo_online(message):
-    """Gunakan OCR Space API dengan download yang benar"""
-    if not OCR_SPACE_API_KEY:
-        logger.warning("⚠️ OCR_SPACE_API_KEY tidak diset, tidak bisa OCR")
-        return None
-    
-    photo_path = None
     try:
+        if not OCR_SPACE_API_KEY:
+            return None
         logger.info("📸 Downloading captcha photo...")
-        
-        # Hapus parameter timeout - download_media() tidak support timeout
         photo_path = await message.download_media()
-        
-        if not photo_path:
-            logger.error("❌ Gagal download photo: path kosong")
-            return None
-        
-        logger.info(f"✅ Photo downloaded: {photo_path}")
         downloaded_photos.append(photo_path)
-        
-        # Cek file size
-        if os.path.getsize(photo_path) < 100:
-            logger.error(f"❌ File terlalu kecil: {os.path.getsize(photo_path)} bytes")
-            return None
-        
-        # OCR dengan OCR Space
-        with open(photo_path, "rb") as f:
-            files = {
-                'file': (photo_path, f, 'image/png')
-            }
-            data = {
+        with open(photo_path, 'rb') as f:
+            image_data = base64.b64encode(f.read()).decode('utf-8')
+        response = requests.post(
+            'https://api.ocr.space/parse/image',
+            data={
+                'base64Image': f'data:image/jpeg;base64,{image_data}',
                 'apikey': OCR_SPACE_API_KEY,
                 'language': 'eng',
-                'OCREngine': 1,
-                'scale': True,
-                'isTable': False,
-                'detectOrientation': True,
-                'filetype': 'PNG'
-            }
-            
-            logger.info("📤 Mengirim ke OCR Space...")
-            response = requests.post(
-                'https://api.ocr.space/parse/image',
-                files=files,
-                data=data,
-                timeout=60
-            )
-            
-            if response.status_code != 200:
-                logger.error(f"❌ OCR Space HTTP {response.status_code}")
-                return None
-            
+                'OCREngine': '2'
+            },
+            timeout=60
+        )
+        if response.status_code == 200:
             result = response.json()
-            
-            if result.get('IsErroredOnProcessing'):
-                logger.error(f"❌ OCR Space Error: {result.get('ErrorMessage')}")
-                return None
-            
-            parsed_results = result.get('ParsedResults', [])
-            if not parsed_results:
-                logger.warning("⚠️ Tidak ada hasil OCR")
-                return None
-            
-            parsed_text = parsed_results[0].get('ParsedText', '')
-            logger.info(f"📝 OCR Result: {parsed_text[:200]}")
-            
-            # Cari 6 digit angka
-            clean_text = re.sub(r'\s+', '', parsed_text)
-            
-            # Coba berbagai pattern
-            patterns = [
-                r'(\d{6})',           # 6 digit berurutan
-                r'(\d{3})\s*(\d{3})', # 3 digit spasi 3 digit
-                r'(\d{2})\s*(\d{2})\s*(\d{2})', # 2-2-2
-                r'(\d)\s*(\d)\s*(\d)\s*(\d)\s*(\d)\s*(\d)', # 1 spasi 1
-                r'(\d{4})\s*(\d{2})', # 4-2
-                r'(\d{2})\s*(\d{4})', # 2-4
-            ]
-            
-            for pattern in patterns:
-                match = re.search(pattern, parsed_text)
+            if not result.get('IsErroredOnProcessing'):
+                text = result.get('ParsedResults', [{}])[0].get('ParsedText', '')
+                text = re.sub(r'[^0-9]', '', text)
+                match = re.search(r'(\d{6})', text)
                 if match:
-                    code = ''.join(match.groups())
-                    if len(code) >= 6:
-                        captcha_code = code[:6]
-                        logger.info(f"✅ Captcha detected: {captcha_code}")
-                        return captcha_code
-            
-            # Fallback: ambil semua digit
-            digits = re.sub(r'[^0-9]', '', parsed_text)
-            if len(digits) >= 6:
-                captcha_code = digits[:6]
-                logger.info(f"✅ Captcha detected (fallback): {captcha_code}")
-                return captcha_code
-            
-            # Jika hanya 5 digit, coba dengan tambahan 0 di depan
-            if len(digits) == 5:
-                captcha_code = '0' + digits
-                logger.info(f"⚠️ Hanya 5 digit, coba dengan 0 depan: {captcha_code}")
-                return captcha_code
-            
-            logger.warning(f"⚠️ Tidak menemukan 6 digit: {parsed_text[:100]}")
-            return None
-            
-    except asyncio.CancelledError:
-        logger.error("❌ OCR task dibatalkan")
-        return None
-    except requests.exceptions.Timeout:
-        logger.error("❌ OCR Space timeout")
+                    return match.group(1)
         return None
     except Exception as e:
         logger.error(f"❌ OCR error: {e}")
         return None
-    finally:
-        # Cleanup
-        if photo_path and os.path.exists(photo_path):
-            try:
+
+def cleanup_downloaded_photos():
+    global downloaded_photos
+    for photo_path in downloaded_photos[:]:
+        try:
+            if os.path.exists(photo_path):
                 os.remove(photo_path)
-                if photo_path in downloaded_photos:
-                    downloaded_photos.remove(photo_path)
-            except:
-                pass
+            downloaded_photos.remove(photo_path)
+        except:
+            pass
 
 def extract_telegram_from_bind(text, uid=None, sid=None):
     telegram_value = None
@@ -1374,11 +1273,6 @@ async def auto_redeem_vcr_handler(event):
     chat_username = getattr(chat, 'username', None)
     chat_title = getattr(chat, 'title', '')
     
-    # JANGAN LOG UNTUK GRUP INI - LANGSUNG RETURN TANPA LOG
-    for silent in SILENT_GROUPS:
-        if silent in chat_title.lower() or (chat_username and silent == chat_username):
-            return
-    
     is_target = (
         chat_username == AUTO_REDEEM_CHANNEL or
         AUTO_REDEEM_CHANNEL in chat_title.lower()
@@ -1394,7 +1288,6 @@ async def auto_redeem_vcr_handler(event):
     if not text:
         return
     
-    # Log hanya untuk yang penting
     logger.info(f"📨 New message from {chat_title}")
     
     if not has_vcr(text):
@@ -1423,11 +1316,6 @@ async def auto_redeem_jebray_handler(event):
     chat_username = getattr(chat, 'username', None)
     chat_title = getattr(chat, 'title', '')
     
-    # JANGAN LOG UNTUK GRUP INI - LANGSUNG RETURN TANPA LOG
-    for silent in SILENT_GROUPS:
-        if silent in chat_title.lower() or (chat_username and silent == chat_username):
-            return
-    
     is_target = (
         chat_username == AUTO_REDEEM_JEBRAY_CHANNEL or
         AUTO_REDEEM_JEBRAY_CHANNEL in chat_title.lower()
@@ -1443,7 +1331,6 @@ async def auto_redeem_jebray_handler(event):
     if not text:
         return
     
-    # Log hanya untuk yang penting
     logger.info(f"📨 New message from {chat_title}")
     
     if not has_jebray(text):
@@ -1652,7 +1539,6 @@ async def main():
     logger.info(f"📊 Auto Redeem JEBRAY: {'✅ ACTIVE' if AUTO_REDEEM_JEBRAY_ENABLED else '❌ DISABLED'}")
     logger.info(f"📊 Forward Telegram: {'✅ ACTIVE' if FORWARD_ENABLED else '❌ DISABLED'} to @{FORWARD_TARGET}")
     logger.info(f"📊 Auto Share: {'✅ ACTIVE' if AUTO_SHARE_ENABLED else '❌ DISABLED'}")
-    logger.info(f"🔇 Silent groups: {SILENT_GROUPS}")
 
     auto_redeem.load()
     auto_redeem_jebray.load()
