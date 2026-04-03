@@ -8,8 +8,6 @@ import re
 import logging
 import json
 import requests
-import base64
-
 # Setup logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -25,7 +23,6 @@ BOT_B_TOKEN = os.environ.get('BOT_B_TOKEN', '')
 BOT_A_USERNAME = 'bengkelmlbb_bot'
 BOT_BIND_USERNAME = 'stasiunmlbb_bot'
 REDIS_URL = os.environ.get('REDIS_URL', os.environ.get('REDISCLOUD_URL', ''))
-OCR_SPACE_API_KEY = os.environ.get('OCR_SPACE_API_KEY', '')
 STOK_ADMIN_URL = os.environ.get('STOK_ADMIN_URL', 'https://whatsapp.com/channel/0029VbA4PrD5fM5TMgECoE1E')
 
 # ==================== BIND CONFIG ====================
@@ -499,32 +496,62 @@ def validate_mlbb_gopay_sync(user_id, server_id):
 
 async def read_number_from_photo_online(message):
     try:
-        if not OCR_SPACE_API_KEY:
-            return None
+        import pytesseract
+        from PIL import Image, ImageFilter, ImageEnhance
+        import numpy as np
+
         logger.info("📸 Downloading captcha photo...")
         photo_path = await message.download_media()
         downloaded_photos.append(photo_path)
-        with open(photo_path, 'rb') as f:
-            image_data = base64.b64encode(f.read()).decode('utf-8')
-        response = requests.post(
-            'https://api.ocr.space/parse/image',
-            data={
-                'base64Image': f'data:image/jpeg;base64,{image_data}',
-                'apikey': OCR_SPACE_API_KEY,
-                'language': 'eng',
-                'OCREngine': '2'
-            },
-            timeout=60
-        )
-        if response.status_code == 200:
-            result = response.json()
-            if not result.get('IsErroredOnProcessing'):
-                text = result.get('ParsedResults', [{}])[0].get('ParsedText', '')
-                text = re.sub(r'[^0-9]', '', text)
-                match = re.search(r'(\d{6})', text)
+
+        # Buka gambar
+        img = Image.open(photo_path)
+
+        # === PREPROCESSING untuk tingkatkan akurasi OCR ===
+        # 1. Convert ke grayscale
+        img = img.convert('L')
+
+        # 2. Perbesar gambar 3x agar OCR lebih akurat
+        width, height = img.size
+        img = img.resize((width * 3, height * 3), Image.LANCZOS)
+
+        # 3. Tingkatkan kontras
+        enhancer = ImageEnhance.Contrast(img)
+        img = enhancer.enhance(2.5)
+
+        # 4. Sharpen gambar
+        img = img.filter(ImageFilter.SHARPEN)
+        img = img.filter(ImageFilter.SHARPEN)
+
+        # 5. Threshold (binarize) - buat hitam putih tegas
+        threshold = 128
+        img = img.point(lambda x: 0 if x < threshold else 255, '1')
+        img = img.convert('L')
+
+        # === OCR dengan beberapa konfigurasi (fallback) ===
+        configs = [
+            '--psm 6 -c tessedit_char_whitelist=0123456789',  # Block teks, hanya angka
+            '--psm 7 -c tessedit_char_whitelist=0123456789',  # Satu baris teks
+            '--psm 8 -c tessedit_char_whitelist=0123456789',  # Satu kata
+            '--psm 13 -c tessedit_char_whitelist=0123456789', # Raw line
+        ]
+
+        for config in configs:
+            try:
+                raw_text = pytesseract.image_to_string(img, config=config)
+                digits = re.sub(r'[^0-9]', '', raw_text)
+                match = re.search(r'(\d{6})', digits)
                 if match:
-                    return match.group(1)
+                    code = match.group(1)
+                    logger.info(f"✅ OCR berhasil dengan config '{config}': {code}")
+                    return code
+            except Exception as e:
+                logger.warning(f"⚠️ Config '{config}' gagal: {e}")
+                continue
+
+        logger.error("❌ Semua konfigurasi OCR gagal menemukan 6 digit")
         return None
+
     except Exception as e:
         logger.error(f"❌ OCR error: {e}")
         return None
