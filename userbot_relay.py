@@ -1229,24 +1229,25 @@ async def ocr_result_handler(event):
     message = event.message
     sender = await message.get_sender()
     
-    # Hanya proses dari OCR bot
-    if not sender or sender.username != 'mobilelegendstools_bot':
+    # Filter berdasarkan ID mobilelegendstools_bot (dari log: 8627530965)
+    if sender.id != 8627530965:
         return
     
     text = message.text or message.message or ''
-    logger.info(f"📩 Dari @mobilelegendstools_bot: {text[:100]}")
+    text = text.strip()
     
-    # Ekstrak angka 6 digit dari pesan OCR bot
-    digits = re.findall(r'\d', text)
-    if len(digits) >= 6:
-        captcha_code = ''.join(digits[:6])
-        logger.info(f"🔑 Mendapatkan kode captcha dari OCR bot: {captcha_code}")
+    logger.info(f"📩 Dari OCR bot: {text}")
+    
+    # Cek apakah teks adalah angka 6 digit
+    if re.match(r'^\d{6}$', text):
+        captcha_code = text
+        logger.info(f"🔑 Kode captcha: {captcha_code}")
         
         # Kirim verify ke bengkelmlbb_bot
         try:
             bengkel_bot = await client.get_entity(7240340418)
             await client.send_message(bengkel_bot, f"/verify {captcha_code}")
-            logger.info(f"📤 Mengirim /verify {captcha_code} ke @bengkelmlbb_bot")
+            logger.info(f"📤 /verify {captcha_code} terkirim ke @bengkelmlbb_bot")
             
             # Update status captcha
             global bot_status, captcha_timer_task
@@ -1256,9 +1257,9 @@ async def ocr_result_handler(event):
                 captcha_timer_task = None
                 
         except Exception as e:
-            logger.error(f"❌ Gagal mengirim verify ke bengkelmlbb_bot: {e}")
+            logger.error(f"❌ Gagal mengirim verify: {e}")
     else:
-        logger.warning(f"⚠️ Tidak menemukan 6 digit angka dari OCR bot: {text[:100]}")
+        logger.warning(f"⚠️ Bukan angka 6 digit: {text}")
 
 # ==================== AUTO REDEEM VCR HANDLER ====================
 @events.register(events.NewMessage)
