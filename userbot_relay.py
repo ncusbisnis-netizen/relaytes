@@ -315,7 +315,7 @@ except Exception as e:
 # ==================== GLOBAL VARIABLES ====================
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
-bot_status = {'in_captcha': False}
+bot_status = {'in_captcha': False, 'waiting_ocr': False, 'ocr_start_time': 0}
 sent_requests = {}
 waiting_for_result = {}
 downloaded_photos = []
@@ -331,6 +331,7 @@ BIND_REQUEST_TIMEOUT = 30
 
 REQUEST_TIMEOUT = 30
 CAPTCHA_TIMEOUT = 30
+OCR_TIMEOUT = 10
 
 # ==================== AUTO REDEEM VCR MANAGER ====================
 class AutoRedeemManager:
@@ -820,8 +821,8 @@ async def userbot_command_handler(event):
     text = message.text or ''
     sender = await message.get_sender()
     
-    # Log semua pesan yang masuk
-    logger.info(f"📩 Pesan diterima userbot dari {sender.id}: {text[:100]}")
+    # Log hanya dari ID yang diizinkan - DISABLE, pakai handler khusus
+    # logger.info(f"📩 Pesan diterima userbot dari {sender.id}: {text[:100]}")
     
     # Perintah /send
     if text.startswith('/send'):
@@ -1167,7 +1168,7 @@ async def message_handler(event):
         cleanup_downloaded_photos()
         return
 
-# ==================== HANDLER CAPTCHA DARI BOT BENGKELMLBB (BARU) ====================
+# ==================== HANDLER CAPTCHA DARI BOT BENGKELMLBB ====================
 @events.register(events.NewMessage)
 async def captcha_from_bot_handler(event):
     """Menangani foto dari @bengkelmlbb_bot (ID: 7240340418) dan mengirim ke OCR bot"""
@@ -1215,6 +1216,10 @@ async def captcha_from_bot_handler(event):
         await client.send_file(ocr_bot, photo_path)
         logger.info(f"📤 Foto diteruskan ke @mobilelegendstools_bot untuk OCR")
         
+        # Set timeout untuk OCR (10 detik)
+        bot_status['waiting_ocr'] = True
+        bot_status['ocr_start_time'] = time.time()
+        
         # Hapus foto setelah dikirim
         cleanup_downloaded_photos()
         
@@ -1222,14 +1227,14 @@ async def captcha_from_bot_handler(event):
         logger.error(f"❌ Gagal mengirim foto ke OCR bot: {e}")
         cleanup_downloaded_photos()
 
-# ==================== HANDLER HASIL OCR DARI MOBILELEGENDSTOOLS_BOT (BARU) ====================
+# ==================== HANDLER HASIL OCR DARI MOBILELEGENDSTOOLS_BOT ====================
 @events.register(events.NewMessage)
 async def ocr_result_handler(event):
     """Menangani hasil OCR dari @mobilelegendstools_bot (angka 6 digit)"""
     message = event.message
     sender = await message.get_sender()
     
-    # Filter berdasarkan ID mobilelegendstools_bot (dari log: 8627530965)
+    # Filter berdasarkan ID mobilelegendstools_bot
     if sender.id != 8627530965:
         return
     
@@ -1243,6 +1248,11 @@ async def ocr_result_handler(event):
         captcha_code = text
         logger.info(f"🔑 Kode captcha: {captcha_code}")
         
+        # Hapus status waiting OCR
+        global bot_status, captcha_timer_task
+        bot_status['waiting_ocr'] = False
+        bot_status['ocr_start_time'] = 0
+        
         # Kirim verify ke bengkelmlbb_bot
         try:
             bengkel_bot = await client.get_entity(7240340418)
@@ -1250,7 +1260,6 @@ async def ocr_result_handler(event):
             logger.info(f"📤 /verify {captcha_code} terkirim ke @bengkelmlbb_bot")
             
             # Update status captcha
-            global bot_status, captcha_timer_task
             bot_status['in_captcha'] = False
             if captcha_timer_task:
                 captcha_timer_task.cancel()
@@ -1260,6 +1269,117 @@ async def ocr_result_handler(event):
             logger.error(f"❌ Gagal mengirim verify: {e}")
     else:
         logger.warning(f"⚠️ Bukan angka 6 digit: {text}")
+
+# ==================== HANDLER ERROR DARI OCR BOT ====================
+@events.register(events.NewMessage)
+async def ocr_error_handler(event):
+    """Menangani pesan error dari OCR bot"""
+    message = event.message
+    sender = await message.get_sender()
+    
+    # Filter berdasarkan ID mobilelegendstools_bot
+    if sender.id != 8627530965:
+        return
+    
+    text = message.text or message.message or ''
+    text = text.strip()
+    
+    # Cek apakah pesan error
+    error_keywords = ['tidak ada teks', 'gagal memproses', 'maaf', 'error', 'gagal']
+    is_error = any(keyword.lower() in text.lower() for keyword in error_keywords)
+    
+    if is_error:
+        logger.warning(f"⚠️ OCR Bot mengirim error: {text}")
+        
+        # Hapus status waiting OCR
+        global bot_status, captcha_timer_task
+        bot_status['waiting_ocr'] = False
+        bot_status['ocr_start_time'] = 0
+        
+        # Kirim pesan error ke user
+        if active_requests:
+            req_id, req_info = next(iter(active_requests.items()))
+            user_id = req_info['chat_id']
+            message_id = req_info['message_id']
+            await edit_status_message(user_id, message_id, f"OCR Gagal: {text}\nSilakan coba lagi.")
+        
+        # Reset status captcha
+        bot_status['in_captcha'] = False
+        if captcha_timer_task:
+            captcha_timer_task.cancel()
+            captcha_timer_task = None
+        
+        # Hapus request yang sedang berjalan
+        if active_requests:
+            req_id, req_info = next(iter(active_requests.items()))
+            try:
+                head = r.lindex('pending_requests', 0)
+                if head and head.decode('utf-8') == req_id:
+                    r.lpop('pending_requests')
+                r.delete(req_id)
+                logger.info(f"🗑️ Request {req_id} dihapus karena OCR error")
+            except Exception as e:
+                logger.error(f"❌ Gagal hapus Redis: {e}")
+            waiting_for_result.pop(req_info['chat_id'], None)
+            del active_requests[req_id]
+        
+        cleanup_downloaded_photos()
+
+# ==================== TIMEOUT UNTUK OCR ====================
+async def ocr_timeout_checker():
+    """Memeriksa timeout untuk OCR response (10 detik)"""
+    while True:
+        await asyncio.sleep(1)
+        
+        if bot_status.get('waiting_ocr', False):
+            ocr_start_time = bot_status.get('ocr_start_time', 0)
+            if ocr_start_time > 0 and time.time() - ocr_start_time > OCR_TIMEOUT:
+                logger.warning(f"⏰ OCR timeout setelah {OCR_TIMEOUT} detik")
+                
+                # Hapus status waiting
+                bot_status['waiting_ocr'] = False
+                bot_status['ocr_start_time'] = 0
+                
+                # Kirim pesan timeout ke user
+                if active_requests:
+                    req_id, req_info = next(iter(active_requests.items()))
+                    user_id = req_info['chat_id']
+                    message_id = req_info['message_id']
+                    await edit_status_message(user_id, message_id, "OCR timeout. Silakan coba lagi.")
+                    
+                    # Reset status
+                    bot_status['in_captcha'] = False
+                    if captcha_timer_task:
+                        captcha_timer_task.cancel()
+                    
+                    # Hapus request
+                    try:
+                        head = r.lindex('pending_requests', 0)
+                        if head and head.decode('utf-8') == req_id:
+                            r.lpop('pending_requests')
+                        r.delete(req_id)
+                    except Exception as e:
+                        logger.error(f"❌ Gagal hapus Redis: {e}")
+                    
+                    waiting_for_result.pop(user_id, None)
+                    del active_requests[req_id]
+                    cleanup_downloaded_photos()
+
+# ==================== LOGGING KHUSUS ID TERTENTU ====================
+@events.register(events.NewMessage)
+async def specific_logging_handler(event):
+    """Mencatat pesan hanya dari ID 7240340418 dan 8627530965"""
+    sender = await event.get_sender()
+    message = event.message
+    text = message.text or message.message or ''
+    
+    # Hanya log dari ID yang diizinkan
+    if sender.id in [7240340418, 8627530965]:
+        # Cek apakah pesan berisi foto
+        if message.photo:
+            logger.info(f"📸 [ID: {sender.id}] Mengirim foto")
+        else:
+            logger.info(f"📩 [ID: {sender.id}] {text[:200]}")
 
 # ==================== AUTO REDEEM VCR HANDLER ====================
 @events.register(events.NewMessage)
@@ -1564,20 +1684,27 @@ async def main():
         me = await client.get_me()
         logger.info(f"✅ Login sebagai: {me.first_name}")
 
+        # Registrasi semua handler
         client.add_event_handler(message_handler)
-        client.add_event_handler(captcha_from_bot_handler)  # Handler baru untuk captcha
-        client.add_event_handler(ocr_result_handler)       # Handler baru untuk hasil OCR
+        client.add_event_handler(captcha_from_bot_handler)
+        client.add_event_handler(ocr_result_handler)
+        client.add_event_handler(ocr_error_handler)
+        client.add_event_handler(specific_logging_handler)
         client.add_event_handler(auto_redeem_vcr_handler)
         client.add_event_handler(auto_redeem_jebray_handler)
         client.add_event_handler(userbot_command_handler)
         client.add_event_handler(auto_share_handler)
+        
         if BIND_ENABLED:
             client.add_event_handler(bind_response_handler)
             logger.info("✅ Bind response handler aktif")
         else:
             logger.info("⏸️ Bind response handler nonaktif")
 
+        # Jalankan background tasks
         asyncio.create_task(timeout_checker())
+        asyncio.create_task(ocr_timeout_checker())
+        
         await process_queue()
     except Exception as e:
         logger.error(f"❌ Fatal error: {e}")
