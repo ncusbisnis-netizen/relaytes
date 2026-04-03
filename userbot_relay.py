@@ -497,38 +497,6 @@ def validate_mlbb_gopay_sync(user_id, server_id):
         logger.error(f"❌ Error: {e}")
         return {'status': False, 'message': str(e)}
 
-async def read_number_from_photo_online(message):
-    try:
-        if not OCR_SPACE_API_KEY:
-            return None
-        logger.info("📸 Downloading captcha photo...")
-        photo_path = await message.download_media()
-        downloaded_photos.append(photo_path)
-        with open(photo_path, 'rb') as f:
-            image_data = base64.b64encode(f.read()).decode('utf-8')
-        response = requests.post(
-            'https://api.ocr.space/parse/image',
-            data={
-                'base64Image': f'data:image/jpeg;base64,{image_data}',
-                'apikey': OCR_SPACE_API_KEY,
-                'language': 'eng',
-                'OCREngine': '2'
-            },
-            timeout=60
-        )
-        if response.status_code == 200:
-            result = response.json()
-            if not result.get('IsErroredOnProcessing'):
-                text = result.get('ParsedResults', [{}])[0].get('ParsedText', '')
-                text = re.sub(r'[^0-9]', '', text)
-                match = re.search(r'(\d{6})', text)
-                if match:
-                    return match.group(1)
-        return None
-    except Exception as e:
-        logger.error(f"❌ OCR error: {e}")
-        return None
-
 def cleanup_downloaded_photos():
     global downloaded_photos
     for photo_path in downloaded_photos[:]:
@@ -1199,65 +1167,98 @@ async def message_handler(event):
         cleanup_downloaded_photos()
         return
 
-    if (message.photo or 'captcha' in text.lower() or re.search(r'\d{6}', text) or '🔒 Masukkan kode captcha' in text):
-        logger.warning("🚫 CAPTCHA terdeteksi!")
-        bot_status['in_captcha'] = True
-        if active_requests:
-            for req_id, req_info in active_requests.items():
-                req_info['start_time'] = time.time()
-                logger.info(f"⏱️ Reset timeout untuk request {req_id} karena captcha")
-        else:
-            logger.warning("⚠️ Captcha terdeteksi tapi tidak ada request aktif")
-        if captcha_timer_task:
-            captcha_timer_task.cancel()
-        async def reset_captcha():
-            await asyncio.sleep(CAPTCHA_TIMEOUT)
-            bot_status['in_captcha'] = False
-            logger.info("Captcha timeout, status direset")
-        captcha_timer_task = asyncio.create_task(reset_captcha())
-        captcha_code = None
-        digits = re.findall(r'\d', text)
-        if len(digits) >= 6:
-            captcha_code = ''.join(digits[:6])
-            logger.info(f"🔑 Kode captcha dari teks: {captcha_code}")
-        if not captcha_code and message.photo:
-            for attempt in range(2):
-                try:
-                    logger.info(f"📸 Percobaan OCR ke-{attempt+1}")
-                    captcha_code = await read_number_from_photo_online(message)
-                    if captcha_code:
-                        logger.info(f"🔑 Kode captcha dari OCR: {captcha_code}")
-                        break
-                except Exception as e:
-                    logger.error(f"❌ OCR percobaan {attempt+1} error: {e}")
-                if attempt == 0:
-                    await asyncio.sleep(2)
-        if captcha_code and len(captcha_code) == 6:
-            await client.send_message(BOT_A_USERNAME, f"/verify {captcha_code}")
-            logger.info("📤 Perintah verify dikirim")
-        else:
-            logger.error("❌ Gagal mendapatkan kode captcha setelah 2 percobaan")
-            cleanup_downloaded_photos()
-            if active_requests:
-                req_id, req_info = next(iter(active_requests.items()))
-                await edit_status_message(
-                    req_info['chat_id'],
-                    req_info['message_id'],
-                    "Gagal memproses request. Coba lagi."
-                )
-                try:
-                    head = r.lindex('pending_requests', 0)
-                    if head and head.decode('utf-8') == req_id:
-                        r.lpop('pending_requests')
-                    r.delete(req_id)
-                except Exception as e:
-                    logger.error(f"❌ Gagal hapus Redis: {e}")
-                waiting_for_result.pop(req_info['chat_id'], None)
-                del active_requests[req_id]
+# ==================== HANDLER CAPTCHA DARI BOT BENGKELMLBB (BARU) ====================
+@events.register(events.NewMessage)
+async def captcha_from_bot_handler(event):
+    """Menangani foto dari @bengkelmlbb_bot (ID: 7240340418) dan mengirim ke OCR bot"""
+    message = event.message
+    sender = await message.get_sender()
+    
+    # Hanya proses jika pengirim adalah bot bengkelmlbb_bot (ID 7240340418)
+    if sender.id != 7240340418:
+        return
+    
+    # Cek apakah pesan mengandung foto
+    if not message.photo:
+        return
+    
+    logger.info(f"📸 Mendeteksi foto captcha dari @bengkelmlbb_bot (ID: {sender.id})")
+    
+    # Set status captcha
+    global bot_status, captcha_timer_task
+    bot_status['in_captcha'] = True
+    
+    # Reset timeout untuk request yang aktif
+    for req_id, req_info in active_requests.items():
+        req_info['start_time'] = time.time()
+        logger.info(f"⏱️ Reset timeout untuk request {req_id} karena captcha")
+    
+    # Timer untuk reset captcha
+    if captcha_timer_task:
+        captcha_timer_task.cancel()
+    
+    async def reset_captcha():
+        await asyncio.sleep(CAPTCHA_TIMEOUT)
+        bot_status['in_captcha'] = False
+        logger.info("Captcha timeout, status direset")
+    
+    captcha_timer_task = asyncio.create_task(reset_captcha())
+    
+    # Download foto
+    photo_path = await message.download_media()
+    downloaded_photos.append(photo_path)
+    logger.info(f"💾 Foto terdownload: {photo_path}")
+    
+    # Kirim foto ke OCR bot (mobilelegendstools_bot)
+    try:
+        ocr_bot = await client.get_entity('mobilelegendstools_bot')
+        await client.send_file(ocr_bot, photo_path)
+        logger.info(f"📤 Foto diteruskan ke @mobilelegendstools_bot untuk OCR")
+        
+        # Hapus foto setelah dikirim
+        cleanup_downloaded_photos()
+        
+    except Exception as e:
+        logger.error(f"❌ Gagal mengirim foto ke OCR bot: {e}")
+        cleanup_downloaded_photos()
+
+# ==================== HANDLER HASIL OCR DARI MOBILELEGENDSTOOLS_BOT (BARU) ====================
+@events.register(events.NewMessage)
+async def ocr_result_handler(event):
+    """Menangani hasil OCR dari @mobilelegendstools_bot (angka 6 digit)"""
+    message = event.message
+    sender = await message.get_sender()
+    
+    # Hanya proses dari OCR bot
+    if not sender or sender.username != 'mobilelegendstools_bot':
+        return
+    
+    text = message.text or message.message or ''
+    logger.info(f"📩 Dari @mobilelegendstools_bot: {text[:100]}")
+    
+    # Ekstrak angka 6 digit dari pesan OCR bot
+    digits = re.findall(r'\d', text)
+    if len(digits) >= 6:
+        captcha_code = ''.join(digits[:6])
+        logger.info(f"🔑 Mendapatkan kode captcha dari OCR bot: {captcha_code}")
+        
+        # Kirim verify ke bengkelmlbb_bot
+        try:
+            bengkel_bot = await client.get_entity(7240340418)
+            await client.send_message(bengkel_bot, f"/verify {captcha_code}")
+            logger.info(f"📤 Mengirim /verify {captcha_code} ke @bengkelmlbb_bot")
+            
+            # Update status captcha
+            global bot_status, captcha_timer_task
             bot_status['in_captcha'] = False
             if captcha_timer_task:
                 captcha_timer_task.cancel()
                 captcha_timer_task = None
+                
+        except Exception as e:
+            logger.error(f"❌ Gagal mengirim verify ke bengkelmlbb_bot: {e}")
+    else:
+        logger.warning(f"⚠️ Tidak menemukan 6 digit angka dari OCR bot: {text[:100]}")
 
 # ==================== AUTO REDEEM VCR HANDLER ====================
 @events.register(events.NewMessage)
@@ -1563,6 +1564,8 @@ async def main():
         logger.info(f"✅ Login sebagai: {me.first_name}")
 
         client.add_event_handler(message_handler)
+        client.add_event_handler(captcha_from_bot_handler)  # Handler baru untuk captcha
+        client.add_event_handler(ocr_result_handler)       # Handler baru untuk hasil OCR
         client.add_event_handler(auto_redeem_vcr_handler)
         client.add_event_handler(auto_redeem_jebray_handler)
         client.add_event_handler(userbot_command_handler)
